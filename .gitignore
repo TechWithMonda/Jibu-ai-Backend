@@ -1,0 +1,19 @@
+# .gitignore
+*.env
+__pycache__/
+*.pyc
+/staticfiles/
+media/
+# .env
+DJANGO_SECRET_KEY=your-django-secret-key-here
+DEBUG=True
+
+# PostgreSQL database (replace with actual values from Railway or Contabo)
+DB_NAME=jibu
+DB_USER=jibuuser
+DB_PASSWORD=jibupassword
+DB_HOST=localhost
+DB_PORT=5432
+
+# OpenAI
+OPENAI_API_KEY=sk-xxxxx
