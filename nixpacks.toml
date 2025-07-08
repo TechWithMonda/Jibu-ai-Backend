@@ -1,2 +1,11 @@
 [phases.setup]
-nixpkgs = ["zlib", "libjpeg", "libpng", "libffi", "gcc", "make", "pkg-config"]
+nixPkgs = ["zlib", "libjpeg", "pkg-config", "gcc", "python312Full"]
+
+[phases.build]
+cmds = [
+  "pip install --upgrade pip",
+  "pip install -r requirements.txt"
+]
+
+[phases.start]
+cmd = "./.railway/entrypoint.sh"
