@@ -129,4 +129,6 @@ USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # OpenAI Key
+
+SECRET_KEY = os.getenv("SECRET_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
