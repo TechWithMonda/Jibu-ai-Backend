@@ -1,1 +1,1 @@
-web: gunicorn jibu_backend.wsgi --log-file -
+web: gunicorn jibu_backend.wsgi
