@@ -18,8 +18,9 @@ ALLOWED_HOSTS = [
     '127.0.0.1',
     'localhost',
     '9ccd-154-159-238-97.ngrok-free.app',
-    'jibu-ai.vercel.app'
-    '.railway.app' 
+    'jibu-ai.vercel.app',
+    '.railway.app',
+    "web-production-d639.up.railway.app"
 ]
 
 # JWT
