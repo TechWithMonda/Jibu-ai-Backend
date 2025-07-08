@@ -9,3 +9,6 @@ cmds = [
 
 [phases.start]
 cmd = "./.railway/entrypoint.sh"
+
+[build]
+packages = ["tesseract-ocr"]
