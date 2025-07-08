@@ -3,6 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
+import os
 
 load_dotenv()
 
@@ -106,7 +107,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # Database: use Railway DATABASE_URL if present, else fallback to sqlite
 DATABASES = {
     'default': dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
+        default=os.getenv("DATABASE_URL")
     )
 }
 
