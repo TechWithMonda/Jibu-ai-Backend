@@ -22,6 +22,7 @@ ALLOWED_HOSTS = [
     '.ngrok-free.app',  # Allow ngrok URLs
 ]
 
+
 # Security headers
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = True
@@ -143,6 +144,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://*.vercel.app",
     "https://*.railway.app",
     "https://*.ngrok-free.app",
+    "https://jibu-ai.vercel.app",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
