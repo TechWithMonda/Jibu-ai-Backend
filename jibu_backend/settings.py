@@ -25,7 +25,7 @@ ALLOWED_HOSTS = [
 
 # Security headers
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SECURE_SSL_REDIRECT = True
+SECURE_SSL_REDIRECT = False
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 CSRF_TRUSTED_ORIGINS = [
@@ -138,7 +138,7 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings
-CORS_ALLOWED_ORIGINS = [
+CORS_ALLOWED_ORIGINS  = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://*.vercel.app",
@@ -146,8 +146,26 @@ CORS_ALLOWED_ORIGINS = [
     "https://*.ngrok-free.app",
     "https://jibu-ai.vercel.app",
     "capacitor://localhost",
+    "http://localhost",
+    "ionic://localhost",
+    
 ]
+
+
+
 CORS_ALLOW_CREDENTIALS = True
+
+
+CORS_ALLOW_METHODS= [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')

@@ -23,64 +23,149 @@ import pytesseract
 from PIL import Image
 from pdf2image import convert_from_bytes
 import io
-from .models import ExamAnalysis  # Add this if it exists
+from .models import ExamAnalysis 
+import io
+import logging
+from datetime import datetime # Add this if it exists
 
+logger = logging.getLogger(__name__)
 
 class AnalyzeExamView(APIView):
-    def post(self, request):
-        # Extract text from file (image/PDF)
-        file = request.FILES.get('file')
-        if not file:
-            return Response({"error": "No file provided"}, status=400)
+    permission_classes = [IsAuthenticated]
+    
+    # Allowed file types and sizes
+    ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    
+    # Model configurations
+    MODEL_CONFIG = {
+        'basic': {
+            'prompt_template': "Provide concise answers to these exam questions:\n\n{text}",
+            'model': "gpt-3.5-turbo",
+            'max_tokens': 300
+        },
+        'standard': {
+            'prompt_template': "Provide detailed step-by-step solutions to these exam questions:\n\n{text}",
+            'model': "gpt-4",
+            'max_tokens': 800
+        },
+        'advanced': {
+            'prompt_template': """Provide comprehensive solutions with:
+1. Multiple solution methods where applicable
+2. Explanations of key concepts
+3. References to relevant formulas/theorems
+4. Practical applications
 
-        # OCR: Extract text using Tesseract
-        text = self.extract_text_from_file(file)
+Questions:
+{text}""",
+            'model': "gpt-4-turbo",
+            'max_tokens': 1500
+        }
+    }
+
+    def post(self, request):
+        try:
+            # Validate input
+            file = request.FILES.get('file')
+            if not file:
+                return Response({"error": "No file provided"}, status=400)
+
+            # Validate file type and size
+            self.validate_file(file)
+            
+            # Extract text
+            start_time = datetime.now()
+            text = self.extract_text_from_file(file)
+            extraction_time = (datetime.now() - start_time).total_seconds()
+            
+            if not text.strip():
+                return Response({"error": "Could not extract text from document"}, status=400)
+            
+            # Get model type (default to standard)
+            model_type = request.data.get('model_type', 'standard').lower()
+            if model_type not in self.MODEL_CONFIG:
+                model_type = 'standard'
+            
+            # Call OpenAI API
+            start_time = datetime.now()
+            response = self.call_openai(text, model_type)
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            # Save to DB
+            ExamAnalysis.objects.create(
+                user=request.user,
+                original_filename=file.name,
+                file_size=file.size,
+                input_text=text[:5000],  # Store first 5000 chars
+                model_type=model_type,
+                response=response,
+                extraction_time=extraction_time,
+                processing_time=processing_time
+            )
+            
+            return Response({
+                "result": response,
+                "metadata": {
+                    "model_used": model_type,
+                    "extraction_time": extraction_time,
+                    "processing_time": processing_time,
+                    "total_time": extraction_time + processing_time
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error processing exam analysis: {str(e)}", exc_info=True)
+            return Response({"error": "An error occurred during processing"}, status=500)
+
+    def validate_file(self, file):
+        """Validate file type and size"""
+        if file.content_type not in self.ALLOWED_MIME_TYPES:
+            raise ValueError(f"Unsupported file type. Allowed types: {', '.join(self.ALLOWED_MIME_TYPES)}")
         
-        # Call OpenAI API
-        model_type = request.data.get('model_type', 'standard')
-        response = self.call_openai(text, model_type)
-        
-        # Save to DB (optional)
-        ExamAnalysis.objects.create(
-            user=request.user,
-            input_text=text,
-            model_type=model_type,
-            response=response
-        )
-        
-        return Response({"result": response})
+        if file.size > self.MAX_FILE_SIZE:
+            raise ValueError(f"File size exceeds maximum limit of {self.MAX_FILE_SIZE/1024/1024}MB")
 
     def extract_text_from_file(self, file):
-        if file.name.lower().endswith('.pdf'):
-            images = convert_from_bytes(file.read())
-            text = ""
-            for img in images:
-                text += pytesseract.image_to_string(img)
-            return text
-        else:
-            img = Image.open(io.BytesIO(file.read()))
-            return pytesseract.image_to_string(img)
+        """Extract text from image or PDF using OCR"""
+        try:
+            file_content = file.read()
+            
+            if file.content_type == 'application/pdf':
+                images = convert_from_bytes(file_content)
+                text = ""
+                for img in images:
+                    text += pytesseract.image_to_string(img) + "\n"
+                return text.strip()
+            else:
+                img = Image.open(io.BytesIO(file_content))
+                return pytesseract.image_to_string(img)
+                
+        except Exception as e:
+            logger.error(f"Error during text extraction: {str(e)}")
+            raise ValueError("Could not extract text from document")
 
     def call_openai(self, text, model_type):
-        openai.api_key = settings.OPENAI_API_KEY
-        
-        # Customize prompt based on model type
-        if model_type == "basic":
-            prompt = f"Answer concisely: {text}"
-            model = "gpt-3.5-turbo"
-        elif model_type == "advanced":
-            prompt = f"Explain in detail with references: {text}"
-            model = "gpt-4-turbo"
-        else:
-            prompt = f"Provide step-by-step solution: {text}"
-            model = "gpt-4"
-        
-        response = openai.ChatCompletion.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3  # Less creative, more factual
-        )
-        return response.choices[0].message.content
+        """Call OpenAI API with the appropriate configuration"""
+        try:
+            config = self.MODEL_CONFIG[model_type]
+            prompt = config['prompt_template'].format(text=text)
+            
+            response = openai.ChatCompletion.create(
+                model=config['model'],
+                messages=[
+                    {"role": "system", "content": "You are a helpful teaching assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=config['max_tokens'],
+                temperature=0.3,  # Less creative, more factual
+                top_p=0.9
+            )
+            return response.choices[0].message.content
+            
+        except openai.error.OpenAIError as e:
+            logger.error(f"OpenAI API error: {str(e)}")
+            raise ValueError("Error communicating with AI service")
+
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
 
