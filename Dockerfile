@@ -18,4 +18,4 @@ RUN pip install -r requirements.txt
 COPY . .
 
 # Solution 1 (choose one):
-CMD ["/scripts/docker-cmd"]
+CMD ["/bin/bash", "-c", "gunicorn run:app –bind 0.0.0.0:$PORT"]
