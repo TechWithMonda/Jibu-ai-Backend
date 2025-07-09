@@ -12,7 +12,7 @@ from rest_framework import generics
 from .serializers import RegisterSerializer
 from django.contrib.auth.models import User
 
-
+from openai import OpenAI, OpenAIError 
 # views.py
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import MyTokenObtainPairSerializer
@@ -144,27 +144,30 @@ Questions:
             logger.error(f"Error during text extraction: {str(e)}")
             raise ValueError("Could not extract text from document")
 
-    def call_openai(self, text, model_type):
-        """Call OpenAI API with the appropriate configuration"""
-        try:
-            config = self.MODEL_CONFIG[model_type]
-            prompt = config['prompt_template'].format(text=text)
-            
-            response = openai.ChatCompletion.create(
-                model=config['model'],
-                messages=[
-                    {"role": "system", "content": "You are a helpful teaching assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=config['max_tokens'],
-                temperature=0.3,  # Less creative, more factual
-                top_p=0.9
-            )
-            return response.choices[0].message.content
-            
-        except openai.error.OpenAIError as e:
-            logger.error(f"OpenAI API error: {str(e)}")
-            raise ValueError("Error communicating with AI service")
+def call_openai(self, text, model_type):
+    """Call OpenAI API with the appropriate configuration"""
+    try:
+        config = self.MODEL_CONFIG[model_type]
+        prompt = config['prompt_template'].format(text=text)
+
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+        response = client.chat.completions.create(
+            model=config['model'],
+            messages=[
+                {"role": "system", "content": "You are a helpful teaching assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=config['max_tokens'],
+            temperature=0.3,
+            top_p=0.9
+        )
+
+        return response.choices[0].message.content
+
+    except OpenAIError as e:
+        logger.error(f"OpenAI API error: {str(e)}")
+        raise ValueError("Error communicating with AI service")
 
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
