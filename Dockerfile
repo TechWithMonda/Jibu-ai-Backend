@@ -23,4 +23,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Proper CMD with shell expansion
-CMD exec gunicorn --bind 0.0.0.0:$PORT jibu_backend.wsgi:application
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8000} jibu_backend.wsgi:application"]
