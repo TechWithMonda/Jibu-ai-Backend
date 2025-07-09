@@ -1,6 +1,4 @@
-
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    libtesseract-dev \
-    tesseract-ocr-eng \  # For English (add others like `tesseract-ocr-fra` for French)
-    && rm -rf /var/lib/apt/lists/*
+# Add this to your Dockerfile before installing Python dependencies
+RUN apt-get update && \
+    apt-get install -y tesseract-ocr libtesseract-dev tesseract-ocr-eng && \
+    rm -rf /var/lib/apt/lists/*
