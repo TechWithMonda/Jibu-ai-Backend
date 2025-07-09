@@ -145,6 +145,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://*.railway.app",
     "https://*.ngrok-free.app",
     "https://jibu-ai.vercel.app",
+    "capacitor://localhost",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
