@@ -4,10 +4,13 @@ from .views import UploadPaperView
 from .views import AnalyzeExamView
 from .views import RegisterView
 from .views import MyTokenObtainPairView
+from .views import DashboardAPIView
+
+
 
 urlpatterns = [
     path('login/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
-
+    path('/dashboard/', DashboardAPIView.as_view(), name='dashboard'),
     path('refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('upload-paper/', UploadPaperView.as_view(), name='upload-paper'),
     path('analyze/', AnalyzeExamView.as_view(), name='analyze_exam'),

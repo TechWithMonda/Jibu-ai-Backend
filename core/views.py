@@ -26,7 +26,53 @@ import io
 from .models import ExamAnalysis 
 import io
 import logging
-from datetime import datetime # Add this if it exists
+from datetime import datetime 
+
+from .models import ExamPaper, SolutionView, UserActivity
+from .serializers import ExamPaperSerializer, UserActivitySerializer
+from django.db.models import Count, Avg, Sum
+
+
+
+class DashboardAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        
+        # Calculate stats
+        total_papers = ExamPaper.objects.filter(user=user).count()
+        
+        solutions_viewed = SolutionView.objects.filter(user=user).count()
+        
+        accuracy_rate = SolutionView.objects.filter(
+            user=user,
+            was_helpful__isnull=False
+        ).aggregate(avg=Avg('was_helpful'))['avg'] or 0
+        
+        # Estimate time saved (assuming 30 minutes saved per solution viewed)
+        time_saved = SolutionView.objects.filter(user=user).count() * 0.5
+        
+        # Get recent papers (last 5)
+        recent_papers = ExamPaper.objects.filter(user=user).order_by('-uploaded_at')[:5]
+        
+        # Get recent activities (last 5)
+        recent_activities = UserActivity.objects.filter(user=user).order_by('-created_at')[:5]
+        
+        # Serialize data
+        paper_serializer = ExamPaperSerializer(recent_papers, many=True)
+        activity_serializer = UserActivitySerializer(recent_activities, many=True)
+        
+        return Response({
+            'stats': {
+                'total_papers': total_papers,
+                'solutions_viewed': solutions_viewed,
+                'accuracy_rate': accuracy_rate,
+                'time_saved': round(time_saved, 1)
+            },
+            'recentPapers': paper_serializer.data,
+            'recentActivities': activity_serializer.data
+        })# Add this if it exists
 
 logger = logging.getLogger(__name__)
 
