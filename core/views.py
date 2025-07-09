@@ -46,7 +46,7 @@ class AnalyzeExamView(APIView):
         },
         'standard': {
             'prompt_template': "Provide detailed step-by-step solutions to these exam questions:\n\n{text}",
-            'model': "gpt-4",
+            'model': "gpt-3.5-turbo",
             'max_tokens': 800
         },
         'advanced': {
@@ -58,7 +58,7 @@ class AnalyzeExamView(APIView):
 
 Questions:
 {text}""",
-            'model': "gpt-4-turbo",
+            'model': "gpt-3.5-turbo",
             'max_tokens': 1500
         }
     }
