@@ -144,30 +144,30 @@ Questions:
             logger.error(f"Error during text extraction: {str(e)}")
             raise ValueError("Could not extract text from document")
 
-def call_openai(self, text, model_type):
-    """Call OpenAI API with the appropriate configuration"""
-    try:
-        config = self.MODEL_CONFIG[model_type]
-        prompt = config['prompt_template'].format(text=text)
+    def call_openai(self, text, model_type):
+        """Call OpenAI API with the appropriate configuration"""
+        try:
+            config = self.MODEL_CONFIG[model_type]
+            prompt = config['prompt_template'].format(text=text)
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-        response = client.chat.completions.create(
-            model=config['model'],
-            messages=[
-                {"role": "system", "content": "You are a helpful teaching assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=config['max_tokens'],
-            temperature=0.3,
-            top_p=0.9
-        )
+            response = client.chat.completions.create(
+                model=config['model'],
+                messages=[
+                    {"role": "system", "content": "You are a helpful teaching assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=config['max_tokens'],
+                temperature=0.3,
+                top_p=0.9
+            )
 
-        return response.choices[0].message.content
+            return response.choices[0].message.content
 
-    except OpenAIError as e:
-        logger.error(f"OpenAI API error: {str(e)}")
-        raise ValueError("Error communicating with AI service")
+        except OpenAIError as e:
+            logger.error(f"OpenAI API error: {str(e)}")
+            raise ValueError("Error communicating with AI service")
 
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
