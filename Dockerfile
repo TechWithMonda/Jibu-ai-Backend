@@ -18,7 +18,8 @@ RUN pip install -r requirements.txt
 COPY . .
 
 # Solution 1 (choose one):
-CMD ["/bin/sh", "-c", "gunicorn jibu_backend.wsgi:application --bind 0.0.0.0:$PORT"]
+
+ CMD sh -c "gunicorn jibu_backend.wsgi:application --bind 0.0.0.0:${PORT}"
 
 # OR Solution 2:
 # COPY start.sh .
