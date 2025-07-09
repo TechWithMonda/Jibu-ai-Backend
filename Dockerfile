@@ -12,7 +12,11 @@ RUN apt-get update && \
     tesseract-ocr \
     libtesseract-dev \
     tesseract-ocr-eng && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y poppler-utils tesseract-ocr && \
+    apt-get clean
+
+    # Install poppler-utils
+
 
 # Install Python dependencies
 COPY requirements.txt .
