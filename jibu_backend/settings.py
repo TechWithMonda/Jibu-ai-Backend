@@ -3,7 +3,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
-
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'  # Linux path
 # Load environment variables
 load_dotenv()
 
