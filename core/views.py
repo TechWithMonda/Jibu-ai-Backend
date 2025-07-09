@@ -92,16 +92,16 @@ Questions:
             processing_time = (datetime.now() - start_time).total_seconds()
             
             # Save to DB
-            ExamAnalysis.objects.create(
-                user=request.user,
-                original_filename=file.name,
-                file_size=file.size,
-                input_text=text[:5000],  # Store first 5000 chars
-                model_type=model_type,
-                response=response,
-                extraction_time=extraction_time,
-                processing_time=processing_time
-            )
+            # ExamAnalysis.objects.create(
+            #     user=request.user,
+            #     original_filename=file.name,
+            #     file_size=file.size,
+            #     input_text=text[:5000],  # Store first 5000 chars
+            #     model_type=model_type,
+            #     response=response,
+            #     extraction_time=extraction_time,
+            #     processing_time=processing_time
+            # )
             
             return Response({
                 "result": response,
