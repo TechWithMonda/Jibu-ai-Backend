@@ -1,10 +1,8 @@
-# Use official Python image
 FROM python:3.12-slim
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies (Tesseract)
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y \
     tesseract-ocr \
@@ -12,15 +10,18 @@ RUN apt-get update && \
     tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first to leverage Docker cache
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Set environment variable for pytesseract
+# Set Tesseract path
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
 
-# Command to run the application
-CMD ["gunicorn", "jibu_backend.wsgi:application"]
+# Use PORT environment variable (Railway provides this automatically)
+EXPOSE $PORT
+
+# Correct CMD instruction
+CMD ["sh", "-c", "gunicorn jibu_backend.wsgi:application --bind 0.0.0.0:${PORT}"]
