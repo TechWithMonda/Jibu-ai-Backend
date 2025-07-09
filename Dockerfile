@@ -1,21 +1,27 @@
 FROM python:3.12-slim
 
+# Set work directory
 WORKDIR /app
 
-# Install dependencies
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+ENV PORT=8000  # Default port (Railway will override this)
+
+# Install system dependencies
 RUN apt-get update && \
-    apt-get install -y tesseract-ocr libtesseract-dev tesseract-ocr-eng && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y \
+    tesseract-ocr \
+    libtesseract-dev \
+    tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set default port
-ENV PORT=8000
-
-# Install Python requirements
+# Install Python dependencies
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app
+# Copy project
 COPY . .
 
-# Solution 1 (choose one):
-CMD ["/bin/bash", "-c", "gunicorn run:app –bind 0.0.0.0:$PORT"]
+# Proper CMD with shell expansion
+CMD ["sh", "-c", "gunicorn jibu_backend.wsgi:application --bind 0.0.0.0:${PORT}"]
