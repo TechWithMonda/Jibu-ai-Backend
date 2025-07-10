@@ -19,12 +19,13 @@ class TutorRequestSerializer(serializers.Serializer):
     message = serializers.CharField(required=True, max_length=1000)
     knowledge_level = serializers.ChoiceField(
         choices=[
-            ('beginner', 'Beginner'),
-            ('intermediate', 'Intermediate'), 
+            ('beginner', 'Beginner'),  # Fixed typo
+            ('intermediate', 'Intermediate'),
             ('advanced', 'Advanced')
         ],
         default='intermediate'
     )
+        
     conversation_id = serializers.IntegerField(required=False, allow_null=True)
     action = serializers.CharField(required=False, max_length=20)
 
