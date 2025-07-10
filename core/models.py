@@ -54,3 +54,15 @@ class UserActivity(models.Model):
     
     class Meta:
         ordering = ['-created_at']
+
+class Conversation(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    title = models.CharField(max_length=200)
+
+class Message(models.Model):
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE)
+    sender = models.CharField(max_length=10)  # 'user' or 'bot'
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    knowledge_level = models.CharField(max_length=20, default='intermediate')

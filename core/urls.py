@@ -5,6 +5,8 @@ from .views import AnalyzeExamView
 from .views import RegisterView
 from .views import MyTokenObtainPairView
 from .views import DashboardAPIView
+from .views import AITutorAPIView
+
 
 
 
@@ -15,5 +17,6 @@ urlpatterns = [
     path('upload-paper/', UploadPaperView.as_view(), name='upload-paper'),
     path('analyze/', AnalyzeExamView.as_view(), name='analyze_exam'),
     path('register/', RegisterView.as_view(), name='register'),
-    
+    path('tutor/', AITutorAPIView.as_view(), name='ai_tutor_api'),
+
 ]
