@@ -28,6 +28,16 @@ logger = logging.getLogger(__name__)
 class AITutorAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+
+    def options(self, request, *args, **kwargs):
+        """Handle CORS preflight requests"""
+        response = Response()
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return response
+
+
     def post(self, request):
         try:
             data = request.data
