@@ -24,6 +24,7 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
 class AITutorAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -32,8 +33,8 @@ class AITutorAPIView(APIView):
             data = request.data
             message = data.get('message', '')
             knowledge_level = data.get('knowledge_level', 'intermediate')
-            action = data.get('action', None)
-            conversation_id = data.get('conversation_id', None)
+            action = data.get('action')
+            conversation_id = data.get('conversation_id')
 
             # Get or create conversation
             if conversation_id:
@@ -79,91 +80,15 @@ class AITutorAPIView(APIView):
             })
 
         except Exception as e:
-            return Response({
-                'error': str(e),
-                'status': 'error'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': str(e), 'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Utility methods...
     def generate_ai_response(self, message, knowledge_level):
         levels = {
             'beginner': "Let me explain this in simple terms...",
             'intermediate': "Here's a detailed explanation...",
             'advanced': "For an advanced understanding, consider these aspects..."
         }
-        return f"{levels.get(knowledge_level, 'intermediate')} Regarding '{message}', the key points are..."
-
-    def generate_related_topics(self, subject):
-        return f"Related topics to {subject}:\n1. Deep dive\n2. Real-world applications"
-
-    def generate_simplified_explanation(self, message):
-        return f"Simple explanation for '{message}': ..."
-
-    def generate_example(self, message):
-        return f"Example for '{message}': ..."
-
-    def generate_practice_question(self, message):
-        return f"Practice question for '{message}': ...\n\nAnswer: ..."
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        try:
-            data = request.data
-            message = data.get('message', '')
-            knowledge_level = data.get('knowledge_level', 'intermediate')
-            action = data.get('action')
-            conversation_id = data.get('conversation_id')
-
-            if conversation_id:
-                conversation = Conversation.objects.get(id=conversation_id, user=request.user)
-            else:
-                conversation = Conversation.objects.create(
-                    user=request.user,
-                    title=message[:50] + '...' if message else 'New Conversation'
-                )
-
-            Message.objects.create(
-                conversation=conversation,
-                sender='user',
-                content=message,
-                knowledge_level=knowledge_level
-            )
-
-            if action == 'related':
-                response_content = self.generate_related_topics(data.get('subject'))
-            elif action == 'simplify':
-                response_content = self.generate_simplified_explanation(message)
-            elif action == 'example':
-                response_content = self.generate_example(message)
-            elif action == 'practice':
-                response_content = self.generate_practice_question(message)
-            else:
-                response_content = self.generate_ai_response(message, knowledge_level)
-
-            Message.objects.create(
-                conversation=conversation,
-                sender='bot',
-                content=response_content,
-                knowledge_level=knowledge_level
-            )
-
-            return Response({
-                'response': response_content,
-                'conversation_id': conversation.id,
-                'status': 'success'
-            })
-
-        except Exception as e:
-            return Response({'error': str(e), 'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
-
-    def generate_ai_response(self, message, knowledge_level):
-        knowledge_levels = {
-            'beginner': "Let me explain this in simple terms...",
-            'intermediate': "Here's a detailed explanation...",
-            'advanced': "For an advanced understanding, consider these aspects..."
-        }
-        return f"{knowledge_levels.get(knowledge_level, '')} Regarding '{message}', the key points are..."
+        return f"{levels.get(knowledge_level, '')} Regarding '{message}', the key points are..."
 
     def generate_related_topics(self, subject):
         return f"Here are some topics related to {subject}:\n1. Advanced concepts\n2. Historical context\n3. Practical applications"
@@ -176,6 +101,7 @@ class AITutorAPIView(APIView):
 
     def generate_practice_question(self, message):
         return f"Here's a practice question about '{message}': [Question]\n\n[Answer]"
+
 
 
 class DashboardAPIView(APIView):
