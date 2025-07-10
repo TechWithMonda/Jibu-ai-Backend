@@ -20,7 +20,8 @@ ALLOWED_HOSTS = [
     'localhost',
     '.railway.app',  # Allow all Railway subdomains
     '.vercel.app',   # Allow all Vercel subdomains
-    '.ngrok-free.app',  # Allow ngrok URLs
+    '.ngrok-free.app',
+       "capacitor://localhost",  # Allow ngrok URLs
 ]
 
 
