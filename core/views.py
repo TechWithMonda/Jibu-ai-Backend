@@ -24,94 +24,97 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+from rest_framework import status
+from .serializers import TutorRequestSerializer, TutorResponseSerializer
 
 class AITutorAPIView(APIView):
     permission_classes = [IsAuthenticated]
-
-
-    def options(self, request, *args, **kwargs):
-        """Handle CORS preflight requests"""
-        response = Response()
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        return response
-
-
+    
     def post(self, request):
         try:
-            data = request.data
-            message = data.get('message', '')
-            knowledge_level = data.get('knowledge_level', 'intermediate')
-            action = data.get('action')
-            conversation_id = data.get('conversation_id')
-
+            # Validate input
+            request_serializer = TutorRequestSerializer(data=request.data)
+            if not request_serializer.is_valid():
+                return Response(
+                    {'error': request_serializer.errors, 'status': 'error'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            data = request_serializer.validated_data
+            user = request.user
+            
             # Get or create conversation
-            if conversation_id:
-                conversation = Conversation.objects.get(id=conversation_id, user=request.user)
+            if data.get('conversation_id'):
+                conversation = Conversation.objects.get(
+                    id=data['conversation_id'],
+                    user=user
+                )
             else:
                 conversation = Conversation.objects.create(
-                    user=request.user,
-                    title=message[:50] + '...' if message else 'New Conversation'
+                    user=user,
+                    title=data['message'][:50] + '...'
                 )
-
+            
             # Save user message
             Message.objects.create(
                 conversation=conversation,
                 sender='user',
-                content=message,
-                knowledge_level=knowledge_level
+                content=data['message'],
+                knowledge_level=data['knowledge_level']
             )
-
-            # AI logic
-            if action == 'related':
-                response_content = self.generate_related_topics(data.get('subject'))
-            elif action == 'simplify':
-                response_content = self.generate_simplified_explanation(message)
-            elif action == 'example':
-                response_content = self.generate_example(message)
-            elif action == 'practice':
-                response_content = self.generate_practice_question(message)
-            else:
-                response_content = self.generate_ai_response(message, knowledge_level)
-
+            
+            # Generate AI response
+            response_content = self.generate_response(
+                data['message'],
+                data['knowledge_level'],
+                data.get('action')
+            )
+            
             # Save bot response
             Message.objects.create(
                 conversation=conversation,
                 sender='bot',
                 content=response_content,
-                knowledge_level=knowledge_level
+                knowledge_level=data['knowledge_level']
             )
-
-            return Response({
+            
+            # Prepare and validate response
+            response_data = {
                 'response': response_content,
                 'conversation_id': conversation.id,
                 'status': 'success'
-            })
-
+            }
+            
+            response_serializer = TutorResponseSerializer(data=response_data)
+            if not response_serializer.is_valid():
+                raise Exception("Invalid response format")
+                
+            return Response(response_serializer.validated_data)
+            
         except Exception as e:
-            return Response({'error': str(e), 'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
-
-    def generate_ai_response(self, message, knowledge_level):
-        levels = {
-            'beginner': "Let me explain this in simple terms...",
-            'intermediate': "Here's a detailed explanation...",
-            'advanced': "For an advanced understanding, consider these aspects..."
-        }
-        return f"{levels.get(knowledge_level, '')} Regarding '{message}', the key points are..."
-
-    def generate_related_topics(self, subject):
-        return f"Here are some topics related to {subject}:\n1. Advanced concepts\n2. Historical context\n3. Practical applications"
-
-    def generate_simplified_explanation(self, message):
-        return f"Here's a simpler explanation of '{message}': [Simplified content]"
-
-    def generate_example(self, message):
-        return f"Here's an example related to '{message}': [Example content]"
-
-    def generate_practice_question(self, message):
-        return f"Here's a practice question about '{message}': [Question]\n\n[Answer]"
-
+            logger.error(f"Error in AITutorAPIView: {str(e)}", exc_info=True)
+            return Response(
+                {'error': str(e), 'status': 'error'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    def generate_response(self, message, knowledge_level, action=None):
+        # Your existing response generation logic
+        if action == 'related':
+            return f"Here are some topics related to {message}:\n1. Advanced concepts\n2. Historical context\n3. Practical applications"
+        elif action == 'simplify':
+            return f"Here's a simpler explanation of '{message}': [Simplified content]"
+        elif action == 'example':
+            return f"Here's an example related to '{message}': [Example content]"
+        elif action == 'practice':
+            return f"Here's a practice question about '{message}': [Question]\n\n[Answer]"
+        else:
+            levels = {
+                'beginner': "Let me explain this in simple terms...",
+                'intermediate': "Here's a detailed explanation...",
+                'advanced': "For an advanced understanding, consider these aspects..."
+            }
+            return f"{levels.get(knowledge_level, '')} Regarding '{message}', the key points are..."
 
 
 class DashboardAPIView(APIView):

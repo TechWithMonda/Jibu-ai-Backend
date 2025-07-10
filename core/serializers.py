@@ -2,7 +2,11 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
 from django.contrib.auth.models import User as DjangoUser  # Optional fallback
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.exceptions import ValidationError
+import logging
 
+
+logger = logging.getLogger(__name__)
 from .models import (
     UploadedPaper, ExamPaper, SolutionView,
     UserActivity, Conversation, Message
@@ -11,23 +15,63 @@ from .models import (
 # Use custom user model (if extended)
 User = get_user_model()
 
+class TutorRequestSerializer(serializers.Serializer):
+    message = serializers.CharField(required=True, max_length=1000)
+    knowledge_level = serializers.ChoiceField(
+        choices=[
+            ('beginner', 'Beginner'),
+            ('intermediate', 'Intermediate'), 
+            ('advanced', 'Advanced')
+        ],
+        default='intermediate'
+    )
+    conversation_id = serializers.IntegerField(required=False, allow_null=True)
+    action = serializers.CharField(required=False, max_length=20)
 
-# 🔹 Message Serializer
+    def validate(self, data):
+        logger.debug(f"Validating tutor request: {data}")
+        
+        if len(data['message']) > 1000:
+            raise ValidationError("Message too long (max 1000 characters)")
+            
+        if data.get('action') and data['action'] not in ['related', 'simplify', 'example', 'practice']:
+            raise ValidationError("Invalid action specified")
+            
+        return data
+
+class TutorResponseSerializer(serializers.Serializer):
+    response = serializers.CharField(required=True)
+    conversation_id = serializers.IntegerField(required=True)
+    status = serializers.CharField(default='success')
+    
+    def validate_response(self, value):
+        if not value or not value.strip():
+            raise ValidationError("Response cannot be empty")
+        return value
+
 class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
         fields = ['id', 'sender', 'content', 'timestamp', 'knowledge_level']
+        read_only_fields = ['id', 'timestamp']
 
+    def validate_sender(self, value):
+        if value not in ['user', 'bot']:
+            raise ValidationError("Sender must be either 'user' or 'bot'")
+        return value
 
-# 🔹 Conversation Serializer (Nested Messages)
 class ConversationSerializer(serializers.ModelSerializer):
     messages = MessageSerializer(many=True, read_only=True)
-
+    
     class Meta:
         model = Conversation
-        fields = ['id', 'title', 'created_at', 'messages']
-
-
+        fields = ['id', 'title', 'created_at', 'user', 'messages']
+        read_only_fields = ['id', 'created_at', 'user']
+        
+    def validate_title(self, value):
+        if len(value) > 100:
+            raise ValidationError("Title too long (max 100 characters)")
+        return value
 # 🔹 ExamPaper Serializer
 class ExamPaperSerializer(serializers.ModelSerializer):
     class Meta:
@@ -127,3 +171,7 @@ class UploadedPaperSerializer(serializers.ModelSerializer):
     class Meta:
         model = UploadedPaper
         fields = ['id', 'file', 'uploaded_at']
+class TutorRequestSerializer(serializers.Serializer):
+    message = serializers.CharField()
+    knowledge_level = serializers.ChoiceField(choices=[...])
+    conversation_id = serializers.IntegerField(required=False, allow_null=True)
