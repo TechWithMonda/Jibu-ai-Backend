@@ -4,10 +4,10 @@ from django.contrib.auth import get_user_model, authenticate
 from django.contrib.auth.models import User as DjangoUser
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import ValidationError
+
 from .models import (
     UploadedPaper, ExamPaper, SolutionView,
-    UserActivity, Conversation, Message
-)
+    UserActivity, Conversation, Message, Document, PlagiarismReport, SimilarityMatch)
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -151,3 +151,25 @@ class UploadedPaperSerializer(serializers.ModelSerializer):
     class Meta:
         model = UploadedPaper
         fields = ['id', 'file', 'uploaded_at']
+
+
+
+class DocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Document
+        fields = ['id', 'title', 'content', 'file', 'created_at', 'updated_at']
+
+class SimilarityMatchSerializer(serializers.ModelSerializer):
+    source_document = DocumentSerializer(read_only=True)
+    
+    class Meta:
+        model = SimilarityMatch
+        fields = ['source_document', 'similarity_score', 'matched_text', 'source_text', 'start_position', 'end_position']
+
+class PlagiarismReportSerializer(serializers.ModelSerializer):
+    matches = SimilarityMatchSerializer(many=True, read_only=True)
+    document = DocumentSerializer(read_only=True)
+    
+    class Meta:
+        model = PlagiarismReport
+        fields = ['id', 'document', 'overall_similarity', 'total_matches', 'matches', 'created_at']
