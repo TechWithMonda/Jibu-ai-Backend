@@ -140,19 +140,21 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings
-CORS_ALLOWED_ORIGINS  = [
+CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://*.vercel.app",
-    "https://*.railway.app",
-    "https://*.ngrok-free.app",
+    "http://localhost",
     "https://jibu-ai.vercel.app",
     "capacitor://localhost",
-    "http://localhost",
     "ionic://localhost",
-    
 ]
 
+# Allow wildcard subdomains using regex
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+    r"^https://.*\.railway\.app$",
+    r"^https://.*\.ngrok-free\.app$",
+]
 
 
 CORS_ALLOW_CREDENTIALS = True
