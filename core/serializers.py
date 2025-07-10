@@ -19,19 +19,19 @@ class TutorRequestSerializer(serializers.Serializer):
     message = serializers.CharField(required=True, max_length=1000)
     knowledge_level = serializers.ChoiceField(
         choices=[
-            ('beginner', 'Beginner'),  # Fixed typo
+            ('beginner', 'Beginner'),
             ('intermediate', 'Intermediate'),
             ('advanced', 'Advanced')
         ],
-        default='intermediate'
+        default='intermediate',
+        error_messages={
+            'invalid_choice': 'Valid choices are: beginner, intermediate, advanced'
+        }
     )
-        
     conversation_id = serializers.IntegerField(required=False, allow_null=True)
     action = serializers.CharField(required=False, max_length=20)
 
     def validate(self, data):
-        logger.debug(f"Validating tutor request: {data}")
-        
         if len(data['message']) > 1000:
             raise ValidationError("Message too long (max 1000 characters)")
             
