@@ -15,7 +15,7 @@ User = get_user_model()
 class TutorRequestSerializer(serializers.Serializer):
     message = serializers.CharField(required=True)
     knowledge_level = serializers.CharField(required=False, default='intermediate')
-    conversation_id = serializers.IntegerField(required=False)
+    conversation_id = serializers.IntegerField(required=False, allow_null=True)  # Changed this line
     action = serializers.CharField(required=False)
 
     def validate(self, data):
@@ -26,6 +26,7 @@ class TutorRequestSerializer(serializers.Serializer):
             raise ValidationError("Invalid action specified")
             
         return data
+
 
 class TutorResponseSerializer(serializers.Serializer):
     response = serializers.CharField(required=True)
