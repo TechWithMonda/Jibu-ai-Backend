@@ -63,12 +63,16 @@ class AITutorAPIView(APIView):
                 knowledge_level=data['knowledge_level']
             )
             
-            # Generate AI response
-            response_content = self.generate_response(
-                data['message'],
-                data['knowledge_level'],
-                data.get('action')
-            )
+            # Generate AI response with error handling
+            try:
+                response_content = self.generate_response(
+                    data['message'],
+                    data['knowledge_level'],
+                    data.get('action')
+                )
+            except Exception as e:
+                logger.error(f"Response generation failed: {str(e)}")
+                response_content = "I couldn't generate a response. Please try rephrasing your question."
             
             # Save bot response
             Message.objects.create(
@@ -99,23 +103,41 @@ class AITutorAPIView(APIView):
             )
     
     def generate_response(self, message, knowledge_level, action=None):
-        # Your existing response generation logic
-        if action == 'related':
-            return f"Here are some topics related to {message}:\n1. Advanced concepts\n2. Historical context\n3. Practical applications"
-        elif action == 'simplify':
-            return f"Here's a simpler explanation of '{message}': [Simplified content]"
-        elif action == 'example':
-            return f"Here's an example related to '{message}': [Example content]"
-        elif action == 'practice':
-            return f"Here's a practice question about '{message}': [Question]\n\n[Answer]"
-        else:
-            levels = {
-                'beginner': "Let me explain this in simple terms...",
-                'intermediate': "Here's a detailed explanation...",
-                'advanced': "For an advanced understanding, consider these aspects..."
-            }
-            return f"{levels.get(knowledge_level, '')} Regarding '{message}', the key points are..."
-
+        try:
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            
+            # Create different prompts based on action and knowledge level
+            if action == 'related':
+                prompt = f"Provide 3-5 topics closely related to: {message}"
+            elif action == 'simplify':
+                prompt = f"Explain this in simple terms suitable for a beginner: {message}"
+            elif action == 'example':
+                prompt = f"Provide a clear example illustrating: {message}"
+            elif action == 'practice':
+                prompt = f"Generate a practice question about: {message} (include answer)"
+            else:
+                level_prompts = {
+                    'beginner': "Explain this in basic terms: {message}",
+                    'intermediate': "Provide a detailed explanation of: {message}",
+                    'advanced': "Give an advanced technical analysis of: {message}"
+                }
+                prompt = level_prompts.get(knowledge_level, level_prompts['intermediate']).format(message=message)
+            
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a knowledgeable tutor."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=1000
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.error(f"OpenAI error: {str(e)}")
+            return "I encountered an error generating a response. Please try again."
 
 class DashboardAPIView(APIView):
     permission_classes = [IsAuthenticated]

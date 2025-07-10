@@ -1,35 +1,22 @@
+import logging
 from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
-from django.contrib.auth.models import User as DjangoUser  # Optional fallback
+from django.contrib.auth.models import User as DjangoUser
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import ValidationError
-import logging
-
-
-logger = logging.getLogger(__name__)
 from .models import (
     UploadedPaper, ExamPaper, SolutionView,
     UserActivity, Conversation, Message
 )
 
-# Use custom user model (if extended)
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 class TutorRequestSerializer(serializers.Serializer):
-    message = serializers.CharField(required=True, max_length=1000)
-    knowledge_level = serializers.ChoiceField(
-        choices=[
-            ('beginner', 'Beginner'),
-            ('intermediate', 'Intermediate'),
-            ('advanced', 'Advanced')
-        ],
-        default='intermediate',
-        error_messages={
-            'invalid_choice': 'Valid choices are: beginner, intermediate, advanced'
-        }
-    )
-    conversation_id = serializers.IntegerField(required=False, allow_null=True)
-    action = serializers.CharField(required=False, max_length=20)
+    message = serializers.CharField(required=True)
+    knowledge_level = serializers.CharField(required=False, default='intermediate')
+    conversation_id = serializers.IntegerField(required=False)
+    action = serializers.CharField(required=False)
 
     def validate(self, data):
         if len(data['message']) > 1000:
@@ -73,14 +60,12 @@ class ConversationSerializer(serializers.ModelSerializer):
         if len(value) > 100:
             raise ValidationError("Title too long (max 100 characters)")
         return value
-# 🔹 ExamPaper Serializer
+
 class ExamPaperSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExamPaper
         fields = ['id', 'name', 'subject', 'uploaded_at']
 
-
-# 🔹 User Activity Serializer (with icon + color fields)
 class UserActivitySerializer(serializers.ModelSerializer):
     icon = serializers.SerializerMethodField()
     color = serializers.SerializerMethodField()
@@ -105,8 +90,6 @@ class UserActivitySerializer(serializers.ModelSerializer):
         }
         return colors.get(obj.activity_type, "gray")
 
-
-# 🔹 JWT Token Serializer (Login)
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         credentials = {
@@ -114,7 +97,6 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
             'password': attrs.get("password")
         }
 
-        # Try email first, then username
         user_obj = User.objects.filter(email=attrs.get("username")).first() or \
                    User.objects.filter(username=attrs.get("username")).first()
 
@@ -138,8 +120,6 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
             }
         }
 
-
-# 🔹 Register Serializer
 class RegisterSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(write_only=True)
     email = serializers.EmailField()
@@ -166,8 +146,6 @@ class RegisterSerializer(serializers.ModelSerializer):
             first_name=validated_data['full_name']
         )
 
-
-# 🔹 Uploaded Paper Serializer
 class UploadedPaperSerializer(serializers.ModelSerializer):
     class Meta:
         model = UploadedPaper
