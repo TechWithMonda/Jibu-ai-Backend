@@ -13,7 +13,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from openai import OpenAI, OpenAIError
-
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
 from .models import (
     UploadedPaper, ExamAnalysis, ExamPaper, SolutionView, UserActivity,
     Conversation, Message
@@ -26,6 +27,85 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 from rest_framework import status
 from .serializers import TutorRequestSerializer, TutorResponseSerializer
+from rest_framework.parsers import MultiPartParser, FormParser
+from .models import Document, PlagiarismReport
+from .serializers import DocumentSerializer, PlagiarismReportSerializer
+from .utils import PlagiarismDetector, extract_text_from_file
+from django.db.models import Q
+
+class DocumentViewSet(viewsets.ModelViewSet):
+    queryset = Document.objects.all()
+    serializer_class = DocumentSerializer
+    parser_classes = (MultiPartParser, FormParser)
+    
+    def create(self, request):
+        """Create a new document"""
+        title = request.data.get('title')
+        content = request.data.get('content', '')
+        file = request.FILES.get('file')
+        
+        if file:
+            try:
+                content = extract_text_from_file(file)
+            except Exception as e:
+                return Response(
+                    {'error': f'Error processing file: {str(e)}'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        document = Document.objects.create(
+            title=title,
+            content=content,
+            file=file,
+            uploaded_by=request.user if request.user.is_authenticated else None
+        )
+        
+        serializer = self.get_serializer(document)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['post'])
+    def check_plagiarism(self, request, pk=None):
+        """Check plagiarism for a specific document"""
+        document = self.get_object()
+        detector = PlagiarismDetector()
+        
+        try:
+            report = detector.detect_plagiarism(document)
+            serializer = PlagiarismReportSerializer(report)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response(
+                {'error': f'Error during plagiarism check: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """Search documents"""
+        query = request.query_params.get('q', '')
+        if query:
+            documents = Document.objects.filter(
+                Q(title__icontains=query) | Q(content__icontains=query)
+            )
+        else:
+            documents = Document.objects.all()
+        
+        serializer = self.get_serializer(documents, many=True)
+        return Response(serializer.data)
+
+class PlagiarismReportViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = PlagiarismReport.objects.all()
+    serializer_class = PlagiarismReportSerializer
+    
+    def get_queryset(self):
+        queryset = PlagiarismReport.objects.all()
+        document_id = self.request.query_params.get('document_id')
+        if document_id:
+            queryset = queryset.filter(document__id=document_id)
+        return queryset.order_by('-created_at')
+
+
+
 
 class AITutorAPIView(APIView):
     permission_classes = [IsAuthenticated]
