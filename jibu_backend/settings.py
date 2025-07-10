@@ -147,6 +147,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://jibu-ai.vercel.app",
     "capacitor://localhost",
     "ionic://localhost",
+    "https://localhost",
 ]
 
 # Allow wildcard subdomains using regex
