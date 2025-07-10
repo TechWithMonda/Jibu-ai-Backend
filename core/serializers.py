@@ -172,7 +172,3 @@ class UploadedPaperSerializer(serializers.ModelSerializer):
     class Meta:
         model = UploadedPaper
         fields = ['id', 'file', 'uploaded_at']
-class TutorRequestSerializer(serializers.Serializer):
-    message = serializers.CharField()
-    knowledge_level = serializers.ChoiceField(choices=[...])
-    conversation_id = serializers.IntegerField(required=False, allow_null=True)
