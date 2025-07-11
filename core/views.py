@@ -11,13 +11,18 @@ from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action
 from rest_framework_simplejwt.views import TokenObtainPairView
-from openai import OpenAI, OpenAIError
+import openai
+from openai import OpenAIError
 import numpy as np
 from PIL import Image
 from django.contrib.auth import get_user_model
 from pdf2image import convert_from_bytes
 import pytesseract
 import io
+
+
+client = openai.OpenAI()
+
 
 logger = logging.getLogger(__name__)
 
