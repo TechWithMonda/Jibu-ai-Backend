@@ -14,6 +14,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from openai import OpenAI
 import openai
 from openai import OpenAIError
+import mimetypes
+import os
 import numpy as np
 from PIL import Image
 from django.contrib.auth import get_user_model
@@ -41,58 +43,63 @@ from .serializers import (
     MessageSerializer, DocumentSerializer, PlagiarismReportSerializer,
     TutorRequestSerializer, TutorResponseSerializer
 )
+from PyPDF2 import PdfReader
+from docx import Document as DocxDocument
 
+from .models import UploadedDocument  #
 
  
 
-class PlagiarismDetector:
-    def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+from .plagiarism import check_plagiarism_with_embeddings  
 
-    def get_embedding(self, text):
-        response = self.client.embeddings.create(
-            input=text,
-            model="text-embedding-3-small"
-        )
-        return response.data[0].embedding
+@api_view(['POST'])
+def check_plagiarism(request, document_id):
+    try:
+        document = UploadedDocument.objects.get(id=document_id)
+    except UploadedDocument.DoesNotExist:
+        return Response({'error': 'Document not found'}, status=404)
 
-    def cosine_similarity(self, a, b):
-        a, b = np.array(a), np.array(b)
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    file_path = document.file.path
+    file_name = document.file.name
 
-    def detect_plagiarism(self, document):
-        # Step 1: Extract text
-        text = extract_text_from_file(document.file)
-        if not text:
-            raise ValueError("Could not extract text.")
+    # Use mimetypes to determine file type
+    mime_type, _ = mimetypes.guess_type(file_path)
+    extension = os.path.splitext(file_name)[1].lower()
 
-        # Step 2: Generate embedding
-        new_embedding = self.get_embedding(text)
+    try:
+        extracted_text = ""
+        if mime_type == 'application/pdf' or extension == '.pdf':
+            with open(file_path, 'rb') as f:
+                pdf = PdfReader(f)
+                for page in pdf.pages:
+                    extracted_text += page.extract_text() or ""
 
-        # Step 3: Compare to existing reports
-        existing_reports = PlagiarismReport.objects.exclude(embedding=None)
+        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' or extension == '.docx':
+            doc = DocxDocument(file_path)
+            for para in doc.paragraphs:
+                extracted_text += para.text + "\n"
 
-        highest_score = 0.0
-        most_similar = None
+        elif mime_type == 'text/plain' or extension == '.txt':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                extracted_text = f.read()
 
-        for report in existing_reports:
-            score = self.cosine_similarity(new_embedding, report.embedding)
-            if score > highest_score:
-                highest_score = score
-                most_similar = report
+        else:
+            return Response({'error': f'Unsupported file type: {mime_type}'}, status=400)
 
-        # Step 4: Save report
-        report = PlagiarismReport.objects.create(
-            document=document,
-            embedding=new_embedding,
-            score=round(highest_score * 100, 2),  # score as percentage
-            matched_document=most_similar,
-            report_data={
-                "matched_document_id": most_similar.id if most_similar else None,
-                "matched_document_score": round(highest_score * 100, 2),
-            }
-        )
-        return report
+        if not extracted_text.strip():
+            return Response({'error': 'No readable text found in the document'}, status=400)
+
+        # 🔍 Run your AI-powered plagiarism check
+        result = check_plagiarism_with_embeddings(extracted_text)
+
+        return Response({
+            'status': 'success',
+            'result': result
+        })
+
+    except Exception as e:
+        return Response({'error': f'Error during text extraction or checking: {str(e)}'}, status=500)
+
 
 def extract_text_from_file(file):
     try:
