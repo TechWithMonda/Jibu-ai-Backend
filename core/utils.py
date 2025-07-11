@@ -1,138 +1,206 @@
-# checker/utils.py
 import openai
 from django.conf import settings
-from sentence_transformers import SentenceTransformer
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import re
+import PyPDF2
+from io import BytesIO
 from .models import Document, PlagiarismReport, SimilarityMatch
 
+# Initialize OpenAI
 openai.api_key = settings.OPENAI_API_KEY
 
+class PDFTextExtractor:
+    """Handles PDF text extraction with improved reliability"""
+    
+    @staticmethod
+    def extract_text_from_pdf(file):
+        """Extract text from PDF file with error handling"""
+        try:
+            pdf_reader = PyPDF2.PdfReader(file)
+            text = []
+            for page in pdf_reader.pages:
+                page_text = page.extract_text()
+                if page_text:  # Only add if text was extracted
+                    text.append(page_text)
+            return '\n'.join(text)
+        except PyPDF2.PdfReadError as e:
+            raise ValueError(f"PDF reading error: {str(e)}")
+        except Exception as e:
+            raise ValueError(f"PDF processing error: {str(e)}")
+
 class PlagiarismDetector:
+    """Plagiarism detection using OpenAI embeddings"""
+    
     def __init__(self):
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
-        self.similarity_threshold = 0.7
+        self.similarity_threshold = 0.75  # Adjust based on your needs
+        self.embedding_model = "text-embedding-3-small"  # Cost-effective model
+        self.chunk_size = 1000  # Characters per chunk for processing
     
     def preprocess_text(self, text):
-        """Clean and preprocess text"""
-        # Remove extra whitespace
+        """Clean and normalize text for comparison"""
+        # Remove extra whitespace and normalize
         text = ' '.join(text.split())
-        # Remove special characters but keep punctuation
-        text = re.sub(r'[^\w\s\.,!?;:]', '', text)
-        return text
+        # Remove special characters but keep basic punctuation
+        text = re.sub(r'[^\w\s.,!?;:]', '', text)
+        return text.lower()  # Case-insensitive comparison
     
-    def split_into_sentences(self, text):
-        """Split text into sentences"""
-        sentences = re.split(r'[.!?]+', text)
-        return [s.strip() for s in sentences if s.strip()]
+    def chunk_text(self, text):
+        """Split text into manageable chunks"""
+        words = text.split()
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for word in words:
+            if current_length + len(word) + 1 > self.chunk_size:
+                chunks.append(' '.join(current_chunk))
+                current_chunk = []
+                current_length = 0
+            current_chunk.append(word)
+            current_length += len(word) + 1
+        
+        if current_chunk:
+            chunks.append(' '.join(current_chunk))
+        
+        return chunks
     
     def get_embeddings(self, texts):
-        """Get embeddings for texts using sentence transformer"""
-        return self.model.encode(texts)
-    
-    def check_with_openai(self, text1, text2):
-        """Use OpenAI to check similarity between two texts"""
+        """Get embeddings from OpenAI API with retry logic"""
+        if not texts:
+            return []
+            
         try:
-            response = openai.ChatCompletion.create(
+            response = openai.embeddings.create(
+                input=texts,
+                model=self.embedding_model
+            )
+            return [np.array(data.embedding) for data in response.data]
+        except openai.RateLimitError:
+            raise Exception("OpenAI API rate limit exceeded")
+        except Exception as e:
+            raise Exception(f"Embedding generation failed: {str(e)}")
+    
+    def calculate_similarity(self, embedding1, embedding2):
+        """Calculate cosine similarity between embeddings"""
+        return cosine_similarity(
+            embedding1.reshape(1, -1),
+            embedding2.reshape(1, -1)
+        )[0][0]
+    
+    def verify_with_gpt(self, text1, text2):
+        """Use GPT for semantic similarity verification"""
+        try:
+            prompt = f"""
+            Compare these two text segments and rate their similarity from 0 to 1:
+            
+            Text 1: {text1}
+            
+            Text 2: {text2}
+            
+            Return only a number between 0 and 1 with 2 decimal places.
+            """
+            
+            response = openai.chat.completions.create(
                 model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a plagiarism detection expert. Analyze the similarity between two texts and provide a similarity score from 0 to 1."},
-                    {"role": "user", "content": f"Compare these two texts for similarity:\n\nText 1: {text1}\n\nText 2: {text2}\n\nProvide only a similarity score between 0 and 1."}
-                ],
-                max_tokens=50,
-                temperature=0.1
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=10,
+                temperature=0.0
             )
             
             score_text = response.choices[0].message.content.strip()
-            # Extract numerical score
-            score_match = re.search(r'(\d+\.?\d*)', score_text)
-            if score_match:
-                return float(score_match.group(1))
-            return 0.0
-        except Exception as e:
-            print(f"OpenAI API error: {e}")
+            return float(score_text)
+        except Exception:
             return 0.0
     
     def detect_plagiarism(self, target_document):
-        """Main plagiarism detection function"""
-        target_text = self.preprocess_text(target_document.content)
-        target_sentences = self.split_into_sentences(target_text)
-        
-        # Get all other documents for comparison
-        comparison_docs = Document.objects.exclude(id=target_document.id)
-        
-        # Create plagiarism report
-        report = PlagiarismReport.objects.create(
-            document=target_document,
-            overall_similarity=0.0,
-            total_matches=0
-        )
-        
-        total_similarity = 0
-        total_matches = 0
-        
-        for doc in comparison_docs:
-            doc_text = self.preprocess_text(doc.content)
-            doc_sentences = self.split_into_sentences(doc_text)
+        """Main plagiarism detection workflow"""
+        try:
+            # Extract and preprocess text
+            if target_document.file.name.endswith('.pdf'):
+                with target_document.file.open('rb') as f:
+                    target_text = PDFTextExtractor.extract_text_from_pdf(f)
+            else:
+                target_text = target_document.content
             
-            # Get embeddings
-            target_embeddings = self.get_embeddings(target_sentences)
-            doc_embeddings = self.get_embeddings(doc_sentences)
+            target_text = self.preprocess_text(target_text)
+            target_chunks = self.chunk_text(target_text)
             
-            # Calculate similarity matrix
-            similarity_matrix = cosine_similarity(target_embeddings, doc_embeddings)
+            if not target_chunks:
+                raise ValueError("No valid text extracted from document")
             
-            # Find high similarity matches
-            for i, target_sentence in enumerate(target_sentences):
-                for j, doc_sentence in enumerate(doc_sentences):
-                    similarity = similarity_matrix[i][j]
+            # Get embeddings for target document
+            target_embeddings = self.get_embeddings(target_chunks)
+            
+            # Create report
+            report = PlagiarismReport.objects.create(
+                document=target_document,
+                overall_similarity=0.0,
+                total_matches=0
+            )
+            
+            total_similarity = 0
+            total_matches = 0
+            
+            # Compare against other documents
+            comparison_docs = Document.objects.exclude(id=target_document.id)
+            
+            for doc in comparison_docs:
+                try:
+                    if doc.file.name.endswith('.pdf'):
+                        with doc.file.open('rb') as f:
+                            doc_text = PDFTextExtractor.extract_text_from_pdf(f)
+                    else:
+                        doc_text = doc.content
                     
-                    if similarity > self.similarity_threshold:
-                        # Double-check with OpenAI
-                        openai_score = self.check_with_openai(target_sentence, doc_sentence)
-                        final_score = (similarity + openai_score) / 2
-                        
-                        if final_score > self.similarity_threshold:
-                            # Find position in original text
-                            start_pos = target_text.find(target_sentence)
-                            end_pos = start_pos + len(target_sentence)
+                    doc_text = self.preprocess_text(doc_text)
+                    doc_chunks = self.chunk_text(doc_text)
+                    
+                    if not doc_chunks:
+                        continue
+                    
+                    doc_embeddings = self.get_embeddings(doc_chunks)
+                    
+                    # Compare chunks
+                    for i, (target_chunk, target_emb) in enumerate(zip(target_chunks, target_embeddings)):
+                        for j, (doc_chunk, doc_emb) in enumerate(zip(doc_chunks, doc_embeddings)):
+                            similarity = self.calculate_similarity(target_emb, doc_emb)
                             
-                            SimilarityMatch.objects.create(
-                                report=report,
-                                source_document=doc,
-                                similarity_score=final_score,
-                                matched_text=target_sentence,
-                                source_text=doc_sentence,
-                                start_position=start_pos,
-                                end_position=end_pos
-                            )
-                            
-                            total_similarity += final_score
-                            total_matches += 1
+                            if similarity > self.similarity_threshold:
+                                # Verify with GPT for better accuracy
+                                verified_score = self.verify_with_gpt(target_chunk, doc_chunk)
+                                combined_score = (similarity + verified_score) / 2
+                                
+                                if combined_score > self.similarity_threshold:
+                                    # Record the match
+                                    start_pos = target_text.find(target_chunk)
+                                    end_pos = start_pos + len(target_chunk)
+                                    
+                                    SimilarityMatch.objects.create(
+                                        report=report,
+                                        source_document=doc,
+                                        similarity_score=combined_score,
+                                        matched_text=target_chunk,
+                                        source_text=doc_chunk,
+                                        start_position=start_pos,
+                                        end_position=end_pos
+                                    )
+                                    
+                                    total_similarity += combined_score
+                                    total_matches += 1
+                
+                except Exception as e:
+                    print(f"Error comparing with document {doc.id}: {str(e)}")
+                    continue
+            
+            # Update report statistics
+            if total_matches > 0:
+                report.overall_similarity = total_similarity / total_matches
+                report.total_matches = total_matches
+                report.save()
+            
+            return report
         
-        # Update report with final statistics
-        overall_similarity = (total_similarity / total_matches) if total_matches > 0 else 0
-        report.overall_similarity = overall_similarity
-        report.total_matches = total_matches
-        report.save()
-        
-        return report
-
-def extract_text_from_file(file):
-    """Extract text from uploaded files"""
-    if file.name.endswith('.txt'):
-        return file.read().decode('utf-8')
-    elif file.name.endswith('.docx'):
-        import docx
-        doc = docx.Document(file)
-        return '\n'.join([paragraph.text for paragraph in doc.paragraphs])
-    elif file.name.endswith('.pdf'):
-        import PyPDF2
-        pdf_reader = PyPDF2.PdfReader(file)
-        text = ''
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-        return text
-    else:
-        raise ValueError("Unsupported file format")
+        except Exception as e:
+            print(f"Plagiarism detection failed: {str(e)}")
+            raise

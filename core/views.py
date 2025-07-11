@@ -13,8 +13,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from openai import OpenAI, OpenAIError
-from rest_framework import viewsets, status
 from rest_framework.decorators import action
+
+
 from .models import (
     UploadedPaper, ExamAnalysis, ExamPaper, SolutionView, UserActivity,
     Conversation, Message
@@ -25,7 +26,7 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
-from rest_framework import status
+from rest_framework import status,viewsets
 from .serializers import TutorRequestSerializer, TutorResponseSerializer
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Document, PlagiarismReport
