@@ -1,39 +1,36 @@
+# At the top of views.py
 import logging
-import io
+from rest_framework.permissions import IsAuthenticated
 from datetime import datetime
 from django.conf import settings
-from django.contrib.auth.models import User
-from django.db.models import Avg
-from PIL import Image
-from pdf2image import convert_from_bytes
-import pytesseract
-from rest_framework import generics, permissions, status
-from rest_framework.permissions import IsAuthenticated
+from django.db.models import Avg, Q
+from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import action
 from rest_framework_simplejwt.views import TokenObtainPairView
 from openai import OpenAI, OpenAIError
-from rest_framework.decorators import action
+from PIL import Image
+from django.contrib.auth import get_user_model
+from pdf2image import convert_from_bytes
+import pytesseract
+import io
 
 
+logger = logging.getLogger(__name__)
+
+# Local imports at the bottom
 from .models import (
-    UploadedPaper, ExamAnalysis, ExamPaper, SolutionView, UserActivity,
-    Conversation, Message
+    UploadedPaper, ExamAnalysis, ExamPaper, SolutionView, 
+    UserActivity, Conversation, Message, Document, PlagiarismReport
 )
 from .serializers import (
     UploadedPaperSerializer, RegisterSerializer, MyTokenObtainPairSerializer,
-    ExamPaperSerializer, UserActivitySerializer, ConversationSerializer, MessageSerializer
+    ExamPaperSerializer, UserActivitySerializer, ConversationSerializer,
+    MessageSerializer, DocumentSerializer, PlagiarismReportSerializer,
+    TutorRequestSerializer, TutorResponseSerializer
 )
-
-logger = logging.getLogger(__name__)
-from rest_framework import status,viewsets
-from .serializers import TutorRequestSerializer, TutorResponseSerializer
-from rest_framework.parsers import MultiPartParser, FormParser
-from .models import Document, PlagiarismReport
-from .serializers import DocumentSerializer, PlagiarismReportSerializer
-from .utils import PlagiarismDetector, extract_text_from_file
-from django.db.models import Q
-
 class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
