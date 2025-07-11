@@ -1,19 +1,42 @@
-# .gitignore
-*.env
+# Python artifacts
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+
+# Environment
+venv/
+.env
+.env.*
+
+# Django static/media
 /staticfiles/
-media/
-# .env
-DJANGO_SECRET_KEY=your-django-secret-key-here
-DEBUG=True
+/media/
+/static/
+/static_root/
+/media_root/
 
-# PostgreSQL database (replace with actual values from Railway or Contabo)
-DB_NAME=jibu
-DB_USER=jibuuser
-DB_PASSWORD=jibupassword
-DB_HOST=localhost
-DB_PORT=5432
+# Database (optional: SQLite or dump files)
+*.sqlite3
+*.db
+*.sql
 
-# OpenAI
-OPENAI_API_KEY=sk-xxxxx
+# VSCode or PyCharm IDE stuff
+.vscode/
+.idea/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Compiled C extensions
+*.so
+
+# Git LFS tracked types (still ignore originals)
+*.zip
+*.mp4
+*.jpg
+*.png
+*.pdf
+*.docx
