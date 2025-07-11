@@ -9,12 +9,16 @@ ENV PORT=8000
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+    # Compiler and build tools
+    gcc \
+    python3-dev \
     # Pillow dependencies
     zlib1g-dev \
     libjpeg-dev \
     libpng-dev \
     libtiff-dev \
     libfreetype6-dev \
+    libwebp-dev \
     # Tesseract OCR
     tesseract-ocr \
     libtesseract-dev \
@@ -27,6 +31,7 @@ RUN apt-get update && \
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir pillow==9.5.0 && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
