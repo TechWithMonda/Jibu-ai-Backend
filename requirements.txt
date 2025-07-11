@@ -1,7 +1,6 @@
 # Core Django setup
 Django==4.2.1
 djangorestframework==3.14.0
-djangorestframework-simplejwt==5.2.2
 djoser==2.2.0
 django-environ==0.11.2
 django-cors-headers==4.3.1
@@ -22,7 +21,9 @@ django-otp==1.2.2
 django-responsive==0.3.0
 social-auth-app-django==5.2.0
 social-auth-core==4.4.2
-
+setuptools<81.0.0  # Prevents pkg_resources deprecation
+rest_framework_simplejwt==5.2.2  # Stable version
+# Your other requirements...
 # Auth and security
 Authlib==1.5.2
 python3-openid==3.2.0
