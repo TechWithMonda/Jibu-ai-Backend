@@ -12,6 +12,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action
 from rest_framework_simplejwt.views import TokenObtainPairView
 from openai import OpenAI, OpenAIError
+import numpy as np
 from PIL import Image
 from django.contrib.auth import get_user_model
 from pdf2image import convert_from_bytes
@@ -36,14 +37,27 @@ from .serializers import (
 )
 
 class PlagiarismDetector:
-    def detect_plagiarism(self, document):
-        # Implementation would go here
+ 
+
+     def detect_plagiarism(self, document):
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        content = document.content
+
+        # Get embedding
+        response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=content
+        )
+        doc_vector = np.array(response.data[0].embedding)
+
+        # You would compare this with existing document vectors in DB
+        # For now, return dummy score
+        score = 0.25  # Placeholder
         return PlagiarismReport.objects.create(
             document=document,
-            score=0.0,
-            report_data={}
+            score=score,
+            report_data={"similar_to": []}
         )
-
 def extract_text_from_file(file):
     try:
         file_content = file.read()
