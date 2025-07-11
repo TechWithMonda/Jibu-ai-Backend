@@ -377,3 +377,65 @@ class AnalyzeView(APIView):
             "question": question,
             "answer": ai_response
         })
+
+
+class UploadAndCheckPlagiarism(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        """
+        Handle file upload and initiate plagiarism check
+        Example payload:
+        {
+            "file": <file_upload>,
+            "title": "Document Title",
+            "strictness": 0.8  # Optional: 0-1 scale
+        }
+        """
+        try:
+            # Get uploaded file
+            uploaded_file = request.FILES.get('file')
+            if not uploaded_file:
+                return Response(
+                    {"error": "No file provided"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Create document record
+            document = Document.objects.create(
+                title=request.data.get('title', uploaded_file.name),
+                file=uploaded_file,
+                uploaded_by=request.user
+            )
+
+            # Extract text
+            try:
+                content = extract_text_from_file(uploaded_file)
+                document.content = content
+                document.save()
+            except Exception as e:
+                logger.error(f"Text extraction failed: {str(e)}")
+                return Response(
+                    {"error": "Failed to extract text from document"},
+                    status=status.HTTP_422_UNPROCESSABLE_ENTITY
+                )
+
+            # Check plagiarism
+            detector = PlagiarismDetector()
+            report = detector.detect_plagiarism(document)
+            
+            return Response({
+                "status": "success",
+                "document_id": document.id,
+                "report_id": report.id,
+                "similarity_score": report.score,
+                "message": "Plagiarism check completed"
+            })
+
+        except Exception as e:
+            logger.error(f"Upload failed: {str(e)}", exc_info=True)
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
