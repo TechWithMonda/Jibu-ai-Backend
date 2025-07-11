@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action
 from rest_framework_simplejwt.views import TokenObtainPairView
+from openai import OpenAI
 import openai
 from openai import OpenAIError
 import numpy as np
