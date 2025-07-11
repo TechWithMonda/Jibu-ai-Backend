@@ -93,33 +93,24 @@ class UserActivitySerializer(serializers.ModelSerializer):
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
-        credentials = {
-            'username': '',
-            'password': attrs.get("password")
+        data = super().validate(attrs)
+        
+        # Get the user object
+        user = self.user
+        
+        # Add comprehensive user data to the response
+        data['user'] = {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'is_staff': user.is_staff,
+            'is_active': user.is_active,
+            'date_joined': user.date_joined.strftime('%Y-%m-%d %H:%M:%S')
         }
-
-        user_obj = User.objects.filter(email=attrs.get("username")).first() or \
-                   User.objects.filter(username=attrs.get("username")).first()
-
-        if user_obj:
-            credentials['username'] = user_obj.username
-
-        user = authenticate(**credentials)
-
-        if not user:
-            raise serializers.ValidationError('Invalid credentials')
-
-        refresh = self.get_token(user)
-
-        return {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email
-            }
-        }
+        
+        return data
 
 class RegisterSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(write_only=True)
