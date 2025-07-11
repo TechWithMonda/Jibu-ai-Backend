@@ -1,5 +1,6 @@
 # At the top of views.py
 import logging
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from datetime import datetime
 from django.conf import settings
@@ -439,3 +440,10 @@ class UploadAndCheckPlagiarism(APIView):
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def check_auth(request):
+    return Response({"message": "You are authenticated", "user": request.user.username})

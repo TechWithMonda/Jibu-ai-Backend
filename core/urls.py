@@ -11,7 +11,8 @@ from .views import (
     AITutorAPIView,
     UploadAndCheckPlagiarism,
     DocumentViewSet,
-    PlagiarismReportViewSet
+    PlagiarismReportViewSet,
+    check_auth,
 )
 
 router = DefaultRouter()
@@ -26,6 +27,7 @@ urlpatterns = [
     path('analyze/', AnalyzeExamView.as_view(), name='analyze_exam'),
     path('register/', RegisterView.as_view(), name='register'),
     path('tutor/', AITutorAPIView.as_view(), name='ai_tutor_api'),
+    path('/check-auth/', check_addauth.as_view(),name='check_auth'),
     path('plagiarism-check/', UploadAndCheckPlagiarism.as_view(), name="check"),
     path('', include(router.urls)),
 ]
