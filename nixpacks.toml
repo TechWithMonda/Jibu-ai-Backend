@@ -1,22 +1,37 @@
 [phases.setup]
 nixPkgs = [
-  "zlib",
-  "libjpeg",
+  # Core Pillow dependencies
+  "zlib.dev",       # Explicit development headers
+  "libjpeg.dev",    # Development version with headers
+  "libpng.dev",     # Development version
+  "freetype.dev",   # Font support
+  "lcms2.dev",     # Color management
+  "openjpeg.dev",  # JPEG 2000 support
+  "tiff.dev",      # TIFF support
+  
+  # System tools
   "pkg-config",
   "gcc",
+  
+  # Python and DB
   "python312Full",
-  "libpq",       # For PostgreSQL support
-  "postgresql",  # For pg_config
-  "libffi",      # For cffi
-  "openssl",     # For SSL support
-  "libpng",      # For Pillow PNG support
-  "tesseract-ocr" # Already in your build packages
+  "libpq",
+  "postgresql",
+  
+  # Other dependencies
+  "libffi",
+  "openssl",
+  
+  # OCR
+  "tesseract-ocr"
 ]
 
 [phases.build]
 cmds = [
-  "pip install --upgrade pip setuptools wheel",
-  "pip install -r requirements.txt"
+  # Explicitly install Pillow first with build isolation disabled
+  "PIP_NO_BUILD_ISOLATION=0 pip install --no-cache-dir --force-reinstall pillow==9.5.0",
+  # Then install the rest
+  "pip install --no-cache-dir -r requirements.txt"
 ]
 
 [phases.start]
