@@ -17,8 +17,10 @@ from pdf2image import convert_from_bytes
 import pytesseract
 import io
 
-
 logger = logging.getLogger(__name__)
+
+# Get User model
+User = get_user_model()
 
 # Local imports at the bottom
 from .models import (
@@ -31,6 +33,28 @@ from .serializers import (
     MessageSerializer, DocumentSerializer, PlagiarismReportSerializer,
     TutorRequestSerializer, TutorResponseSerializer
 )
+
+class PlagiarismDetector:
+    def detect_plagiarism(self, document):
+        # Implementation would go here
+        return PlagiarismReport.objects.create(
+            document=document,
+            score=0.0,
+            report_data={}
+        )
+
+def extract_text_from_file(file):
+    try:
+        file_content = file.read()
+        if file.content_type == 'application/pdf':
+            images = convert_from_bytes(file_content)
+            return "\n".join(pytesseract.image_to_string(img) for img in images).strip()
+        img = Image.open(io.BytesIO(file_content))
+        return pytesseract.image_to_string(img)
+    except Exception as e:
+        logger.error(f"Error during text extraction: {str(e)}")
+        raise ValueError("Could not extract text from document")
+
 class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
@@ -101,9 +125,6 @@ class PlagiarismReportViewSet(viewsets.ReadOnlyModelViewSet):
         if document_id:
             queryset = queryset.filter(document__id=document_id)
         return queryset.order_by('-created_at')
-
-
-
 
 class AITutorAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -241,7 +262,6 @@ class DashboardAPIView(APIView):
             'recentActivities': UserActivitySerializer(recent_activities, many=True).data
         })
 
-
 class AnalyzeExamView(APIView):
     permission_classes = [IsAuthenticated]
     ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
@@ -280,7 +300,7 @@ Questions:
             self.validate_file(file)
 
             start_time = datetime.now()
-            text = self.extract_text_from_file(file)
+            text = extract_text_from_file(file)
             extraction_time = (datetime.now() - start_time).total_seconds()
 
             if not text.strip():
@@ -313,18 +333,6 @@ Questions:
         if file.size > self.MAX_FILE_SIZE:
             raise ValueError("File size exceeds maximum limit")
 
-    def extract_text_from_file(self, file):
-        try:
-            file_content = file.read()
-            if file.content_type == 'application/pdf':
-                images = convert_from_bytes(file_content)
-                return "\n".join(pytesseract.image_to_string(img) for img in images).strip()
-            img = Image.open(io.BytesIO(file_content))
-            return pytesseract.image_to_string(img)
-        except Exception as e:
-            logger.error(f"Error during text extraction: {str(e)}")
-            raise ValueError("Could not extract text from document")
-
     def call_openai(self, text, model_type):
         try:
             config = self.MODEL_CONFIG[model_type]
@@ -345,15 +353,12 @@ Questions:
             logger.error(f"OpenAI API error: {str(e)}")
             raise ValueError("Error communicating with AI service")
 
-
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
-
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
-
 
 class UploadPaperView(generics.CreateAPIView):
     serializer_class = UploadedPaperSerializer
@@ -361,7 +366,6 @@ class UploadPaperView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
-
 
 class AnalyzeView(APIView):
     permission_classes = [IsAuthenticated]
