@@ -36,28 +36,58 @@ from .serializers import (
     TutorRequestSerializer, TutorResponseSerializer
 )
 
-class PlagiarismDetector:
+
  
 
-     def detect_plagiarism(self, document):
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        content = document.content
+class PlagiarismDetector:
+    def __init__(self):
+        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-        # Get embedding
-        response = client.embeddings.create(
-            model="text-embedding-3-small",
-            input=content
+    def get_embedding(self, text):
+        response = self.client.embeddings.create(
+            input=text,
+            model="text-embedding-3-small"
         )
-        doc_vector = np.array(response.data[0].embedding)
+        return response.data[0].embedding
 
-        # You would compare this with existing document vectors in DB
-        # For now, return dummy score
-        score = 0.25  # Placeholder
-        return PlagiarismReport.objects.create(
+    def cosine_similarity(self, a, b):
+        a, b = np.array(a), np.array(b)
+        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+    def detect_plagiarism(self, document):
+        # Step 1: Extract text
+        text = extract_text_from_file(document.file)
+        if not text:
+            raise ValueError("Could not extract text.")
+
+        # Step 2: Generate embedding
+        new_embedding = self.get_embedding(text)
+
+        # Step 3: Compare to existing reports
+        existing_reports = PlagiarismReport.objects.exclude(embedding=None)
+
+        highest_score = 0.0
+        most_similar = None
+
+        for report in existing_reports:
+            score = self.cosine_similarity(new_embedding, report.embedding)
+            if score > highest_score:
+                highest_score = score
+                most_similar = report
+
+        # Step 4: Save report
+        report = PlagiarismReport.objects.create(
             document=document,
-            score=score,
-            report_data={"similar_to": []}
+            embedding=new_embedding,
+            score=round(highest_score * 100, 2),  # score as percentage
+            matched_document=most_similar,
+            report_data={
+                "matched_document_id": most_similar.id if most_similar else None,
+                "matched_document_score": round(highest_score * 100, 2),
+            }
         )
+        return report
+
 def extract_text_from_file(file):
     try:
         file_content = file.read()
