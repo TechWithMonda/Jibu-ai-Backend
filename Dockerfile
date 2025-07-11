@@ -8,19 +8,26 @@ ENV PORT=8000
 
 # Install system dependencies
 RUN apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
+    # Pillow dependencies
+    zlib1g-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libfreetype6-dev \
+    # Tesseract OCR
     tesseract-ocr \
     libtesseract-dev \
-    tesseract-ocr-eng && \
-    apt-get install -y poppler-utils tesseract-ocr && \
-    apt-get clean
-
-    # Install poppler-utils
-
+    tesseract-ocr-eng \
+    poppler-utils \
+    # Other utilities
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
 COPY . .

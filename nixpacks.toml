@@ -1,21 +1,21 @@
 [phases.setup]
 nixPkgs = [
-  # Core Pillow dependencies
-  "zlib.dev",       # Explicit development headers
-  "libjpeg.dev",    # Development version with headers
-  "libpng.dev",     # Development version
-  "freetype.dev",   # Font support
-  "lcms2.dev",     # Color management
-  "openjpeg.dev",  # JPEG 2000 support
-  "tiff.dev",      # TIFF support
+  # Core image libraries with development headers
+  "zlib.dev",
+  "libjpeg.dev",
+  "libpng.dev",
+  "libtiff.dev",
+  "freetype.dev",
+  "lcms2.dev",
+  "openjpeg.dev",
   
-  # System tools
+  # Build tools
   "pkg-config",
   "gcc",
+  "make",
   
-  # Python and DB
+  # Python and database
   "python312Full",
-  "libpq",
   "postgresql",
   
   # Other dependencies
@@ -28,14 +28,15 @@ nixPkgs = [
 
 [phases.build]
 cmds = [
-  # Explicitly install Pillow first with build isolation disabled
-  "PIP_NO_BUILD_ISOLATION=0 pip install --no-cache-dir --force-reinstall pillow==9.5.0",
+  # Set environment variables to help find libraries
+  "export PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${LIBRARY_PATH}/pkgconfig",
+  
+  # Install Pillow first with explicit build requirements
+  "CFLAGS=\"-I${LIBRARY_PATH}/include\" pip install --no-cache-dir --force-reinstall --no-binary :all: pillow==9.5.0",
+  
   # Then install the rest
   "pip install --no-cache-dir -r requirements.txt"
 ]
-
-[phases.start]
-cmd = "./.railway/entrypoint.sh"
 
 [build]
 packages = ["tesseract-ocr"]
