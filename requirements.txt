@@ -1,30 +1,29 @@
 # Core Django setup
 Django==4.2.1
 djangorestframework==3.14.0
-djangorestframework-simplejwt==5.2.2
+djangorestframework-simplejwt==5.2.2  # Correct package name (with dashes)
 djoser==2.2.0
 django-environ==0.11.2
 django-cors-headers==4.3.1
 dj-database-url==2.3.0
-psycopg2-binary==2.9.10  # Or use psycopg2==2.9.7, but only one
+psycopg2-binary==2.9.10
 whitenoise==6.9.0
 
-# Django UI / Forms
+# Django UI/Forms
 django-crispy-forms==2.0
 crispy-bootstrap4==2022.1
 django-widget-tweaks==1.4.12
 django-bootstrap-v5==1.0.11
 
-# Optional Django extensions
+# Extensions
 django-extensions==3.2.3
 django-templated-mail==1.1.1
 django-otp==1.2.2
 django-responsive==0.3.0
 social-auth-app-django==5.2.0
 social-auth-core==4.4.2
-setuptools<81.0.0  # Prevents pkg_resources deprecation
-rest_framework_simplejwt==5.2.2  # Stable version
-# Your other requirements...
+setuptools<81.0.0
+
 # Auth and security
 Authlib==1.5.2
 python3-openid==3.2.0
@@ -32,45 +31,46 @@ python-dotenv==1.0.1
 python-decouple==3.8
 pyotp==2.8.0
 cryptography==40.0.2
-Pillow==9.5.0;
-# Core AI / OpenAI features
-# In requirements.txt
+
+# AI/ML tools
 openai>=1.0.0
 tqdm==4.65.0
 numpy==1.26.2
 pandas==2.2.2
 scipy==1.14.1
+
+# Document processing
 PyPDF2==3.0.1
 pytesseract==0.3.13
 pdf2image==1.17.0
-Pillow==9.5.0
+Pillow==9.5.0  # Only one occurrence
 
-# OCR / Image tools
-opencv-python-headless  # (if using cv2 and deployed to server)
+# Optional image processing
+opencv-python-headless==4.9.0.80  # Pinned version
 
-# Supabase integration (if used)
+# Supabase
 supabase==2.15.0
 gotrue==2.12.0
 postgrest==1.0.1
 realtime==2.4.2
 storage3==0.11.3
 
-# Uvicorn (if using ASGI)
+# ASGI/WSGI
 uvicorn==0.22.0
+gunicorn==23.0.0
 
-# Others
+# HTTP clients
 requests==2.30.0
 httpx==0.28.1
 aiohttp==3.11.16
 aiohappyeyeballs==2.6.1
+
+# Utilities
 python-dateutil==2.9.0.post0
 Pygments==2.18.0
 markdown==3.7
 rich==13.7.1
 
-# Deployment / WSGI
-gunicorn==23.0.0
-
-# Optional: testing
+# Testing
 pytest==8.3.5
 pytest-mock==3.14.0
