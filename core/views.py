@@ -1,4 +1,4 @@
-# At the top of views.py
+# views.py
 import logging
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -22,19 +22,17 @@ from pdf2image import convert_from_bytes
 import pytesseract
 import io
 
-
 # Initialize OpenAI client once
 openai.api_key = settings.OPENAI_API_KEY
-
 logger = logging.getLogger(__name__)
 
 # Get User model
 User = get_user_model()
 
-# Local imports at the bottom
+# Local imports
 from .models import (
-    UploadedPaper, ExamAnalysis, ExamPaper, SolutionView, 
-    UserActivity, Conversation, Message, Document, PlagiarismReport
+    UploadedPaper, ExamAnalysis, ExamPaper, SolutionView,
+    UserActivity, Conversation, Message, Document, PlagiarismReport, UploadedDocument
 )
 from .serializers import (
     UploadedPaperSerializer, RegisterSerializer, MyTokenObtainPairSerializer,
@@ -44,12 +42,7 @@ from .serializers import (
 )
 from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
-
-from .models import UploadedDocument  #
-
- 
-
-from .plagiarism import check_plagiarism_with_embeddings  
+from .plagiarism import check_plagiarism_with_embeddings
 
 def extract_text_from_file(file):
     try:
@@ -160,6 +153,19 @@ class DocumentViewSet(viewsets.ModelViewSet):
             logger.error(f"Plagiarism check failed: {str(e)}")
             return Response({'error': str(e)}, status=500)
 
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        query = request.query_params.get('q', '')
+        if query:
+            documents = Document.objects.filter(
+                Q(title__icontains=query) | Q(content__icontains=query)
+            )
+        else:
+            documents = Document.objects.all()
+        
+        serializer = self.get_serializer(documents, many=True)
+        return Response(serializer.data)
+
 class PlagiarismReportViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = PlagiarismReport.objects.all()
     serializer_class = PlagiarismReportSerializer
@@ -226,7 +232,6 @@ class AITutorAPIView(APIView):
     
     def post(self, request):
         try:
-            # Validate input
             request_serializer = TutorRequestSerializer(data=request.data)
             if not request_serializer.is_valid():
                 return Response(
@@ -237,7 +242,6 @@ class AITutorAPIView(APIView):
             data = request_serializer.validated_data
             user = request.user
             
-            # Get or create conversation
             if data.get('conversation_id'):
                 conversation = Conversation.objects.get(
                     id=data['conversation_id'],
@@ -249,7 +253,6 @@ class AITutorAPIView(APIView):
                     title=data['message'][:50] + '...'
                 )
             
-            # Save user message
             Message.objects.create(
                 conversation=conversation,
                 sender='user',
@@ -257,7 +260,6 @@ class AITutorAPIView(APIView):
                 knowledge_level=data['knowledge_level']
             )
             
-            # Generate AI response with error handling
             try:
                 response_content = self.generate_response(
                     data['message'],
@@ -268,7 +270,6 @@ class AITutorAPIView(APIView):
                 logger.error(f"Response generation failed: {str(e)}")
                 response_content = "I couldn't generate a response. Please try rephrasing your question."
             
-            # Save bot response
             Message.objects.create(
                 conversation=conversation,
                 sender='bot',
@@ -276,7 +277,6 @@ class AITutorAPIView(APIView):
                 knowledge_level=data['knowledge_level']
             )
             
-            # Prepare and validate response
             response_data = {
                 'response': response_content,
                 'conversation_id': conversation.id,
@@ -300,7 +300,6 @@ class AITutorAPIView(APIView):
         try:
             client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
             
-            # Create different prompts based on action and knowledge level
             if action == 'related':
                 prompt = f"Provide 3-5 topics closely related to: {message}"
             elif action == 'simplify':
@@ -472,66 +471,3 @@ class AnalyzeView(APIView):
             "question": question,
             "answer": ai_response
         })
-
-
-class UploadAndCheckPlagiarism(APIView):
-    permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def post(self, request):
-        """
-        Handle file upload and initiate plagiarism check
-        Example payload:
-        {
-            "file": <file_upload>,
-            "title": "Document Title",
-            "strictness": 0.8  # Optional: 0-1 scale
-        }
-        """
-        try:
-            # Get uploaded file
-            uploaded_file = request.FILES.get('file')
-            if not uploaded_file:
-                return Response(
-                    {"error": "No file provided"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Create document record
-            document = Document.objects.create(
-                title=request.data.get('title', uploaded_file.name),
-                file=uploaded_file,
-                uploaded_by=request.user
-            )
-
-            # Extract text
-            try:
-                content = extract_text_from_file(uploaded_file)
-                document.content = content
-                document.save()
-            except Exception as e:
-                logger.error(f"Text extraction failed: {str(e)}")
-                return Response(
-                    {"error": "Failed to extract text from document"},
-                    status=status.HTTP_422_UNPROCESSABLE_ENTITY
-                )
-
-            # Check plagiarism
-                
-            result = check_plagiarism_with_embeddings(document.content)
-            report = PlagiarismReport.objects.create(
-            document=document,
-            score=result['score'],
-            details=result.get('details', {}),
-            status='completed'
-        )
-
-        except Exception as e:
-            logger.error(f"Upload failed: {str(e)}", exc_info=True)
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        
-
-
