@@ -24,6 +24,7 @@ from django.contrib.auth import get_user_model
 from pdf2image import convert_from_bytes
 import pytesseract
 import io
+from pydub import AudioSegment
 
 # Initialize OpenAI client once
 openai.api_key = settings.OPENAI_API_KEY
@@ -77,13 +78,20 @@ class VoiceQueryView(APIView):
                 (...)
                 client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
-
-                audio_file_obj = BytesIO(audio_file.read())
+                input_audio = BytesIO(audio_file.read())
+                input_audio.name = audio_file.name
+                input_audio.seek(0)
+                                
+                audio = AudioSegment.from_file(input_audio)
+                output_buffer = BytesIO()
+                audio.export(output_buffer, format="mp3")
+                output_buffer.name = "converted.mp3"
+                output_buffer.seek(0)
 
                 openai.api_key = settings.OPENAI_API_KEY
                 transcript = client.audio.transcriptions.create(
                     model="whisper-1",
-                    file=audio_file_obj,
+                    file=output_buffer,
                     language=language
                 )
 
