@@ -13,7 +13,7 @@ from .views import (
     DocumentViewSet,
     PlagiarismReportViewSet,
     GenerateQuizQuestions,
-    VoiceQueryAPIView
+    VoiceQueryView,
 )
 
 router = DefaultRouter()
@@ -30,6 +30,6 @@ urlpatterns = [
     path('tutor/', AITutorAPIView.as_view(), name='ai_tutor_api'),
     path('plagiarism-check/', UploadAndCheckPlagiarism.as_view(), name="check"),
     path('generate-quiz/', GenerateQuizQuestions.as_view(), name='generate_quiz'), 
-    path("voice-query/", VoiceQueryAPIView.as_view(), name="voice-query"),
+    path("voice-query/", VoiceQueryView.as_view(), name="voice-query"),
     path('', include(router.urls)),
 ]
