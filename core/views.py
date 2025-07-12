@@ -51,55 +51,6 @@ from .models import UploadedDocument  #
 
 from .plagiarism import check_plagiarism_with_embeddings  
 
-@api_view(['POST'])
-def check_plagiarism(request, document_id):
-    try:
-        document = UploadedDocument.objects.get(id=document_id)
-    except UploadedDocument.DoesNotExist:
-        return Response({'error': 'Document not found'}, status=404)
-
-    file_path = document.file.path
-    file_name = document.file.name
-
-    # Use mimetypes to determine file type
-    mime_type, _ = mimetypes.guess_type(file_path)
-    extension = os.path.splitext(file_name)[1].lower()
-
-    try:
-        extracted_text = ""
-        if mime_type == 'application/pdf' or extension == '.pdf':
-            with open(file_path, 'rb') as f:
-                pdf = PdfReader(f)
-                for page in pdf.pages:
-                    extracted_text += page.extract_text() or ""
-
-        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' or extension == '.docx':
-            doc = DocxDocument(file_path)
-            for para in doc.paragraphs:
-                extracted_text += para.text + "\n"
-
-        elif mime_type == 'text/plain' or extension == '.txt':
-            with open(file_path, 'r', encoding='utf-8') as f:
-                extracted_text = f.read()
-
-        else:
-            return Response({'error': f'Unsupported file type: {mime_type}'}, status=400)
-
-        if not extracted_text.strip():
-            return Response({'error': 'No readable text found in the document'}, status=400)
-
-        # 🔍 Run your AI-powered plagiarism check
-        result = check_plagiarism_with_embeddings(extracted_text)
-
-        return Response({
-            'status': 'success',
-            'result': result
-        })
-
-    except Exception as e:
-        return Response({'error': f'Error during text extraction or checking: {str(e)}'}, status=500)
-
-
 def extract_text_from_file(file):
     try:
         file_content = file.read()
@@ -112,83 +63,163 @@ def extract_text_from_file(file):
         logger.error(f"Error during text extraction: {str(e)}")
         raise ValueError("Could not extract text from document")
 
+@api_view(['POST'])
+def check_plagiarism(request, document_id):
+    try:
+        document = UploadedDocument.objects.get(id=document_id)
+        file_path = document.file.path
+        file_name = document.file.name
+
+        # Extract text based on file type
+        mime_type, _ = mimetypes.guess_type(file_path)
+        extension = os.path.splitext(file_name)[1].lower()
+        extracted_text = ""
+
+        if mime_type == 'application/pdf' or extension == '.pdf':
+            with open(file_path, 'rb') as f:
+                pdf = PdfReader(f)
+                extracted_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' or extension == '.docx':
+            doc = DocxDocument(file_path)
+            extracted_text = "\n".join(para.text for para in doc.paragraphs)
+        elif mime_type == 'text/plain' or extension == '.txt':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                extracted_text = f.read()
+        else:
+            return Response({'error': f'Unsupported file type: {mime_type}'}, status=400)
+
+        if not extracted_text.strip():
+            return Response({'error': 'No readable text found'}, status=400)
+
+        # Get comparison texts and check plagiarism
+        existing_texts = list(UploadedDocument.objects.exclude(id=document_id)
+                          .values_list('content', flat=True))
+        result = check_plagiarism_with_embeddings(extracted_text, existing_texts)
+
+        return Response({
+            'status': 'success',
+            'result': result,
+            'document_id': document_id
+        })
+
+    except UploadedDocument.DoesNotExist:
+        return Response({'error': 'Document not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Plagiarism check error: {str(e)}")
+        return Response({'error': str(e)}, status=500)
+
 class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
     parser_classes = (MultiPartParser, FormParser)
-    
+    permission_classes = [IsAuthenticated]
+
     def create(self, request):
-        """Create a new document"""
-        title = request.data.get('title')
-        content = request.data.get('content', '')
-        file = request.FILES.get('file')
-        
-        if file:
-            try:
+        try:
+            file = request.FILES.get('file')
+            content = request.data.get('content', '')
+            
+            if file:
                 content = extract_text_from_file(file)
-            except Exception as e:
-                return Response(
-                    {'error': f'Error processing file: {str(e)}'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
-        document = Document.objects.create(
-            title=title,
-            content=content,
-            file=file,
-            uploaded_by=request.user if request.user.is_authenticated else None
-        )
-        
-        serializer = self.get_serializer(document)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
+            
+            document = Document.objects.create(
+                title=request.data.get('title', file.name if file else 'Untitled'),
+                content=content,
+                file=file,
+                uploaded_by=request.user
+            )
+            return Response(DocumentSerializer(document).data, status=201)
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+
     @action(detail=True, methods=['post'])
     def check_plagiarism(self, request, pk=None):
-        """Check plagiarism for a specific document"""
         document = self.get_object()
-        
         try:
-            result = check_plagiarism_with_embeddings(document.content)
+            existing_texts = list(Document.objects.exclude(id=document.id)
+                              .exclude(content__isnull=True)
+                              .exclude(content='')
+                              .values_list('content', flat=True))
+            
+            result = check_plagiarism_with_embeddings(
+                uploaded_text=document.content,
+                existing_texts=existing_texts
+            )
+            
+            highest_score = max([r['similarity'] for r in result]) if result else 0
+            
             report = PlagiarismReport.objects.create(
                 document=document,
-                score=result['score'],
-                details=result.get('details', {}),
+                score=highest_score,
+                details={'matches': result},
                 status='completed'
             )
-            serializer = PlagiarismReportSerializer(report)
-            return Response(serializer.data)
+            
+            return Response(PlagiarismReportSerializer(report).data)
         except Exception as e:
-            logger.error(f"Error during plagiarism check: {str(e)}")
-            return Response(
-                {'error': 'Plagiarism check failed'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
-    @action(detail=False, methods=['get'])
-    def search(self, request):
-        """Search documents"""
-        query = request.query_params.get('q', '')
-        if query:
-            documents = Document.objects.filter(
-                Q(title__icontains=query) | Q(content__icontains=query)
-            )
-        else:
-            documents = Document.objects.all()
-        
-        serializer = self.get_serializer(documents, many=True)
-        return Response(serializer.data)
+            logger.error(f"Plagiarism check failed: {str(e)}")
+            return Response({'error': str(e)}, status=500)
 
 class PlagiarismReportViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = PlagiarismReport.objects.all()
     serializer_class = PlagiarismReportSerializer
-    
+    permission_classes = [IsAuthenticated]
+
     def get_queryset(self):
-        queryset = PlagiarismReport.objects.all()
-        document_id = self.request.query_params.get('document_id')
-        if document_id:
+        queryset = super().get_queryset()
+        if document_id := self.request.query_params.get('document_id'):
             queryset = queryset.filter(document__id=document_id)
         return queryset.order_by('-created_at')
+
+class UploadAndCheckPlagiarism(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        try:
+            if not (uploaded_file := request.FILES.get('file')):
+                return Response({"error": "No file provided"}, status=400)
+
+            document = Document.objects.create(
+                title=request.data.get('title', uploaded_file.name),
+                file=uploaded_file,
+                uploaded_by=request.user
+            )
+
+            try:
+                content = extract_text_from_file(uploaded_file)
+                document.content = content
+                document.save()
+            except Exception as e:
+                return Response({"error": f"Text extraction failed: {str(e)}"}, status=422)
+
+            existing_texts = list(Document.objects.exclude(id=document.id)
+                              .exclude(content__isnull=True)
+                              .exclude(content='')
+                              .values_list('content', flat=True))
+            
+            result = check_plagiarism_with_embeddings(
+                uploaded_text=document.content,
+                existing_texts=existing_texts
+            )
+            
+            highest_score = max([r['similarity'] for r in result]) if result else 0
+            
+            report = PlagiarismReport.objects.create(
+                document=document,
+                score=highest_score,
+                details={'matches': result},
+                status='completed'
+            )
+
+            return Response({
+                'document': DocumentSerializer(document).data,
+                'report': PlagiarismReportSerializer(report).data
+            }, status=201)
+
+        except Exception as e:
+            logger.error(f"Upload failed: {str(e)}")
+            return Response({"error": str(e)}, status=500)
 
 class AITutorAPIView(APIView):
     permission_classes = [IsAuthenticated]
