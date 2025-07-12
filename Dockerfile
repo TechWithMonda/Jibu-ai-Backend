@@ -13,6 +13,7 @@ RUN apt-get update && \
     gcc \
     python3-dev \
     # Pillow dependencies
+    espeak libespeak1 \
     zlib1g-dev \
     libjpeg-dev \
     libpng-dev \
