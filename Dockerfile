@@ -19,6 +19,7 @@ RUN apt-get update && \
     libtiff-dev \
     libfreetype6-dev \
     libwebp-dev \
+    libmagic-dev \
     # Tesseract OCR
     tesseract-ocr \
     libtesseract-dev \
@@ -33,8 +34,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir pillow==9.5.0 && \
     pip install --no-cache-dir -r requirements.txt
-
-# Copy app code
 COPY . .
 
 # Copy the start script and give it permission

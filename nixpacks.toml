@@ -13,7 +13,7 @@ nixPkgs = [
   "pkg-config",
   "gcc",
   "make",
-  
+  "libmagic-dev"
   # Python and database
   "python312Full",
   "postgresql",

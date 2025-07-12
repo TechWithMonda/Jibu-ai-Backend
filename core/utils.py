@@ -112,39 +112,7 @@ class PlagiarismDetector:
         except Exception as e:
             raise Exception(f"Embedding generation failed: {str(e)}")
     
-    def calculate_similarity(self, embedding1, embedding2):
-        """Calculate cosine similarity between embeddings"""
-        return cosine_similarity(
-            embedding1.reshape(1, -1),
-            embedding2.reshape(1, -1)
-        )[0][0]
-    
-    def verify_with_gpt(self, text1, text2):
-        """Use GPT for semantic similarity verification"""
-        try:
-            prompt = f"""
-            Compare these two text segments and rate their similarity from 0 to 1:
-            
-            Text 1: {text1}
-            
-            Text 2: {text2}
-            
-            Return only a number between 0 and 1 with 2 decimal places.
-            """
-            
-            response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=10,
-                temperature=0.0
-            )
-            
-            score_text = response.choices[0].message.content.strip()
-            return float(score_text)
-        except Exception:
-            return 0.0
-    
-    def detect_plagiarism(self, target_document):
+
         """Main plagiarism detection workflow"""
         try:
             # Extract and preprocess text
