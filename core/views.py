@@ -21,6 +21,7 @@ from django.contrib.auth import get_user_model
 from pdf2image import convert_from_bytes
 import pytesseract
 import io
+from .plagiarism import PlagiarismDetector  # Add this import
 
 
 # Initialize OpenAI client once
@@ -146,18 +147,25 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def check_plagiarism(self, request, pk=None):
         """Check plagiarism for a specific document"""
         document = self.get_object()
-        detector = PlagiarismDetector()
         
         try:
-            report = detector.detect_plagiarism(document)
+            result = check_plagiarism_with_embeddings(document.content)
+            report = PlagiarismReport.objects.create(
+                document=document,
+                score=result['score'],
+                details=result.get('details', {}),
+                status='completed'
+            )
             serializer = PlagiarismReportSerializer(report)
             return Response(serializer.data)
         except Exception as e:
+            logger.error(f"Error during plagiarism check: {str(e)}")
             return Response(
-                {'error': f'Error during plagiarism check: {str(e)}'}, 
+                {'error': 'Plagiarism check failed'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
+
+
     @action(detail=False, methods=['get'])
     def search(self, request):
         """Search documents"""
