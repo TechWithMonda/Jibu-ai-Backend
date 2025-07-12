@@ -48,11 +48,12 @@ import json
 
 class GenerateQuizQuestions(APIView):
     def post(self, request, *args, **kwargs):
+        user = request.user
         try:
             topic = request.data.get('topic')
             difficulty = request.data.get('difficulty', 'beginner')
             num_questions = request.data.get('num_questions', 5)
-            
+
             if not topic:
                 return Response(
                     {"error": "Topic is required"},
@@ -60,56 +61,60 @@ class GenerateQuizQuestions(APIView):
                 )
 
             prompt = f"""Generate {num_questions} multiple choice questions about {topic} at {difficulty} level.
-            Format each question exactly like this example:
-            
-            Q: What is the capital of France?
-            A: Paris
-            B: London
-            C: Berlin
-            D: Madrid
-            Correct: A
-            
-            Include exactly 4 options (A-D) and mark the correct one.
-            Return only the questions with this exact formatting."""
-            
-            response = openai.ChatCompletion.create(
+Format each question exactly like this:
+
+Q: What is the capital of France?
+A: Paris
+B: London
+C: Berlin
+D: Madrid
+Correct: A
+
+Include exactly 4 options (A-D) and mark the correct one.
+Return only the questions in this format."""
+            client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
                 max_tokens=1000
             )
-            
-            questions = self.parse_questions(response.choices[0].message.content)
+
+            content = response.choices[0].message.content
+            questions = self.parse_questions(content, topic)
             return Response({'questions': questions})
-            
+
         except Exception as e:
             return Response(
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def parse_questions(self, text):
+    def parse_questions(self, text, topic):
         questions = []
         current_q = {}
-        lines = text.split('\n')
-        
+        lines = text.strip().split('\n')
+
         for line in lines:
             line = line.strip()
             if line.startswith('Q:'):
-                if current_q: questions.append(current_q)
+                if current_q:
+                    questions.append(current_q)
                 current_q = {
-                    'question': line[3:].strip(), 
+                    'question': line[3:].strip(),
                     'options': [],
-                    'topic': self.request.data.get('topic')
+                    'topic': topic
                 }
             elif line.startswith(('A:', 'B:', 'C:', 'D:')):
                 current_q['options'].append(line[3:].strip())
             elif line.startswith('Correct:'):
-                current_q['correct'] = line[9:].strip()
-        
-        if current_q: questions.append(current_q)
-        return questions
+                correct_letter = line[8:].strip()
+                letter_index = ord(correct_letter.upper()) - ord('A')
+                current_q['correctAnswer'] = letter_index
 
+        if current_q:
+            questions.append(current_q)
+        return questions
 def extract_text_from_file(file):
     try:
         file_content = file.read()
