@@ -7,9 +7,41 @@ import PyPDF2
 from io import BytesIO
 from .models import Document, PlagiarismReport, SimilarityMatch
 
+
+
+import os
+import magic
+from django.core.files.uploadedfile import UploadedFile
+
 # Initialize OpenAI
 openai.api_key = settings.OPENAI_API_KEY
+def validate_audio_file(file: UploadedFile) -> str:
+    """Validate the uploaded audio file"""
+    if not isinstance(file, UploadedFile):
+        return "Invalid file upload"
+    
+    # Check file size (max 5MB)
+    if file.size > 5 * 1024 * 1024:
+        return "File too large (max 5MB)"
+    
+    # Check file type
+    allowed_types = ['audio/mpeg', 'audio/wav', 'audio/ogg']
+    file_type = magic.from_buffer(file.read(1024), mime=True)
+    file.seek(0)
+    
+    if file_type not in allowed_types:
+        return f"Unsupported file type: {file_type}"
+    
+    return None
 
+def cleanup_temp_files(*file_paths):
+    """Clean up temporary files"""
+    for path in file_paths:
+        try:
+            if os.path.exists(path):
+                os.unlink(path)
+        except Exception:
+            pass
 class PDFTextExtractor:
     """Handles PDF text extraction with improved reliability"""
     

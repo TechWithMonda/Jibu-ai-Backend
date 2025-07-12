@@ -51,48 +51,108 @@ from rest_framework.permissions import AllowAny
 from rest_framework.parsers import JSONParser
 import base64
 
+from .utils import validate_audio_file, cleanup_temp_files
+
 class VoiceQueryView(APIView):
     def post(self, request, *args, **kwargs):
         try:
+            # Validate input
             audio_file = request.FILES.get('audio')
-            language = request.data.get('language', 'en')
-
+            language = request.data.get('language', 'en').lower()
+            
             if not audio_file:
-                return Response({'error': 'No audio file provided'}, status=400)
+                return Response({'error': 'No audio file provided'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if language not in ['en', 'sw']:
+                return Response({'error': 'Unsupported language'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Validate audio file
+            validation_error = validate_audio_file(audio_file)
+            if validation_error:
+                return Response({'error': validation_error}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Use OpenAI Whisper API to transcribe
-            openai.api_key = settings.OPENAI_API_KEY
-            transcript = openai.Audio.transcribe("whisper-1", audio_file)
+            # Transcribe audio using Whisper
+            try:
+                openai.api_key = settings.OPENAI_API_KEY
+                transcript = openai.Audio.transcribe(
+                    "whisper-1", 
+                    audio_file,
+                    language=language  # Helps with accuracy
+                )
+                user_text = transcript['text']
+            except Exception as e:
+                return Response({'error': f'Transcription failed: {str(e)}'}, 
+                              status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            user_text = transcript['text']
+            # Generate AI response
+            try:
+                system_prompt = (
+                    "You are a helpful Swahili tutor." if language == 'sw' 
+                    else "You are a helpful English tutor."
+                )
+                chat = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_text}
+                    ],
+                    temperature=0.7,
+                    max_tokens=500
+                )
+                answer = chat.choices[0].message.content.strip()
+            except Exception as e:
+                return Response({'error': f'AI response failed: {str(e)}'}, 
+                              status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            # Use ChatCompletion to get answer
-            prompt = f"You are a helpful AI tutor. Answer this in {language}: {user_text}"
-            chat = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            answer = chat.choices[0].message.content.strip()
-
-            # Generate TTS response using pyttsx3 and encode as base64
-            engine = pyttsx3.init()
-            voices = engine.getProperty('voices')
-            engine.setProperty('voice', voices[1].id if language == 'sw' else voices[0].id)
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-                engine.save_to_file(answer, f.name)
-                engine.runAndWait()
-                f.seek(0)
-                audio_base64 = base64.b64encode(f.read()).decode()
+            # Generate TTS response
+            try:
+                engine = pyttsx3.init()
+                
+                # Configure voice based on language
+                voices = engine.getProperty('voices')
+                if language == 'sw':
+                    # Try to find a Swahili-compatible voice
+                    swahili_voices = [v for v in voices if 'swahili' in v.name.lower() or 'africa' in v.name.lower()]
+                    if swahili_voices:
+                        engine.setProperty('voice', swahili_voices[0].id)
+                    else:
+                        engine.setProperty('voice', voices[1].id)  # Fallback
+                else:
+                    english_voices = [v for v in voices if 'english' in v.name.lower()]
+                    if english_voices:
+                        engine.setProperty('voice', english_voices[0].id)
+                
+                # Adjust speech parameters
+                engine.setProperty('rate', 150)  # Slower speech for educational content
+                engine.setProperty('volume', 0.9)  # Slightly lower volume
+                
+                # Generate audio file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+                    temp_path = f.name
+                    engine.save_to_file(answer, temp_path)
+                    engine.runAndWait()
+                    
+                    # Read and encode the audio
+                    with open(temp_path, 'rb') as audio_file:
+                        audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
+                    
+                    # Clean up
+                    cleanup_temp_files(temp_path)
+                    
+            except Exception as e:
+                return Response({'error': f'Audio generation failed: {str(e)}'}, 
+                              status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             return Response({
+                "user_question": user_text,
                 "text_response": answer,
-                "audio_response": audio_base64
-            })
+                "audio_response": audio_base64,
+                "language": language
+            }, status=status.HTTP_200_OK)
 
         except Exception as e:
-            return Response({'error': str(e)}, status=500)
-
+            return Response({'error': f'Unexpected error: {str(e)}'}, 
+                          status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 class GenerateQuizQuestions(APIView):
     def post(self, request, *args, **kwargs):
         user = request.user
