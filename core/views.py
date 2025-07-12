@@ -17,6 +17,7 @@ import mimetypes
 import os
 import tempfile
 import pyttsx3
+from io import BytesIO
 import numpy as np
 from PIL import Image
 from django.contrib.auth import get_user_model
@@ -77,10 +78,12 @@ class VoiceQueryView(APIView):
                 client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
+                audio_file_obj = BytesIO(audio_file.read())
+
                 openai.api_key = settings.OPENAI_API_KEY
                 transcript = client.audio.transcriptions.create(
                     model="whisper-1",
-                    file=audio_file,
+                    file=audio_file_obj,
                     language=language
                 )
 
