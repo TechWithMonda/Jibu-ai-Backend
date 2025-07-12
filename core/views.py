@@ -43,6 +43,72 @@ from .serializers import (
 from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
 from .plagiarism import check_plagiarism_with_embeddings
+import json
+
+
+class GenerateQuizQuestions(APIView):
+    def post(self, request, *args, **kwargs):
+        try:
+            topic = request.data.get('topic')
+            difficulty = request.data.get('difficulty', 'beginner')
+            num_questions = request.data.get('num_questions', 5)
+            
+            if not topic:
+                return Response(
+                    {"error": "Topic is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            prompt = f"""Generate {num_questions} multiple choice questions about {topic} at {difficulty} level.
+            Format each question exactly like this example:
+            
+            Q: What is the capital of France?
+            A: Paris
+            B: London
+            C: Berlin
+            D: Madrid
+            Correct: A
+            
+            Include exactly 4 options (A-D) and mark the correct one.
+            Return only the questions with this exact formatting."""
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=1000
+            )
+            
+            questions = self.parse_questions(response.choices[0].message.content)
+            return Response({'questions': questions})
+            
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def parse_questions(self, text):
+        questions = []
+        current_q = {}
+        lines = text.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith('Q:'):
+                if current_q: questions.append(current_q)
+                current_q = {
+                    'question': line[3:].strip(), 
+                    'options': [],
+                    'topic': self.request.data.get('topic')
+                }
+            elif line.startswith(('A:', 'B:', 'C:', 'D:')):
+                current_q['options'].append(line[3:].strip())
+            elif line.startswith('Correct:'):
+                current_q['correct'] = line[9:].strip()
+        
+        if current_q: questions.append(current_q)
+        return questions
 
 def extract_text_from_file(file):
     try:

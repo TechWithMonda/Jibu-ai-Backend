@@ -12,6 +12,7 @@ from .views import (
     UploadAndCheckPlagiarism,
     DocumentViewSet,
     PlagiarismReportViewSet,
+    GenerateQuizQuestions
 )
 
 router = DefaultRouter()
@@ -27,5 +28,6 @@ urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
     path('tutor/', AITutorAPIView.as_view(), name='ai_tutor_api'),
     path('plagiarism-check/', UploadAndCheckPlagiarism.as_view(), name="check"),
+    path('generate-quiz/', GenerateQuizQuestions.as_view(), name='generate_quiz'), 
     path('', include(router.urls)),
 ]
