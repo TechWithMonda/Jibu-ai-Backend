@@ -79,10 +79,11 @@ class VoiceQueryView(APIView):
 
                 openai.api_key = settings.OPENAI_API_KEY
                 transcript = client.audio.transcriptions.create(
-                    "whisper-1", 
-                    audio_file,
-                    language=language  # Helps with accuracy
+                    model="whisper-1",
+                    file=audio_file,
+                    language=language
                 )
+
                 user_text = transcript['text']
             except Exception as e:
                 return Response({'error': f'Transcription failed: {str(e)}'}, 
