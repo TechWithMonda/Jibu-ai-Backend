@@ -102,7 +102,7 @@ class VoiceQueryView(APIView):
                     language=language
                 )
 
-                user_text = transcript['text']
+                user_text = transcript.text
             except Exception as e:
                 return Response({'error': f'Transcription failed: {str(e)}'}, 
                               status=status.HTTP_500_INTERNAL_SERVER_ERROR)
