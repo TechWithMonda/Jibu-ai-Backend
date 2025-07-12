@@ -113,16 +113,16 @@ class VoiceQueryView(APIView):
                     "You are a helpful Swahili tutor." if language == 'sw' 
                     else "You are a helpful English tutor."
                 )
-                chat = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_text}
-                    ],
-                    temperature=0.7,
-                    max_tokens=500
-                )
-                answer = chat.choices[0].message.content.strip()
+                response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_text}
+                ],
+                temperature=0.7,
+                max_tokens=500
+            )
+                answer = response.choices[0].message.content.strip()
             except Exception as e:
                 return Response({'error': f'AI response failed: {str(e)}'}, 
                               status=status.HTTP_500_INTERNAL_SERVER_ERROR)
