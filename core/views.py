@@ -100,34 +100,32 @@ def check_plagiarism(request, document_id):
     except Exception as e:
         logger.error(f"Plagiarism check error: {str(e)}")
         return Response({'error': str(e)}, status=500)
-
 class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
     parser_classes = (MultiPartParser, FormParser)
     permission_classes = [IsAuthenticated]
 
-    def create(self, request):
-        try:
-            file = request.FILES.get('file')
-            content = request.data.get('content', '')
-            
-            if file:
-                content = extract_text_from_file(file)
-            
-            document = Document.objects.create(
-                title=request.data.get('title', file.name if file else 'Untitled'),
-                content=content,
-                file=file,
-                uploaded_by=request.user
-            )
-            return Response(DocumentSerializer(document).data, status=201)
-        except Exception as e:
-            return Response({'error': str(e)}, status=400)
+    def get_queryset(self):
+        """Only show documents belonging to the current user"""
+        return self.queryset.filter(uploaded_by=self.request.user)
+
+    def perform_create(self, serializer):
+        """Automatically set the uploaded_by field to current user"""
+        serializer.save(uploaded_by=self.request.user)
 
     @action(detail=True, methods=['post'])
     def check_plagiarism(self, request, pk=None):
+        """Check plagiarism for a specific document"""
         document = self.get_object()
+        
+        # Verify the document belongs to the requesting user
+        if document.uploaded_by != request.user:
+            return Response(
+                {'error': 'You do not have permission to access this document'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         try:
             existing_texts = list(Document.objects.exclude(id=document.id)
                               .exclude(content__isnull=True)
@@ -152,7 +150,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Plagiarism check failed: {str(e)}")
             return Response({'error': str(e)}, status=500)
-
+        
     @action(detail=False, methods=['get'])
     def search(self, request):
         query = request.query_params.get('q', '')
