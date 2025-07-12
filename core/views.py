@@ -15,6 +15,8 @@ import openai
 from openai import OpenAIError
 import mimetypes
 import os
+import tempfile
+import pyttsx3
 import numpy as np
 from PIL import Image
 from django.contrib.auth import get_user_model
@@ -44,7 +46,52 @@ from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
 from .plagiarism import check_plagiarism_with_embeddings
 import json
+from io import BytesIO
+from rest_framework.permissions import AllowAny
+from rest_framework.parsers import JSONParser
+import base64
 
+class VoiceQueryView(APIView):
+    def post(self, request, *args, **kwargs):
+        try:
+            audio_file = request.FILES.get('audio')
+            language = request.data.get('language', 'en')
+
+            if not audio_file:
+                return Response({'error': 'No audio file provided'}, status=400)
+
+            # Use OpenAI Whisper API to transcribe
+            openai.api_key = settings.OPENAI_API_KEY
+            transcript = openai.Audio.transcribe("whisper-1", audio_file)
+
+            user_text = transcript['text']
+
+            # Use ChatCompletion to get answer
+            prompt = f"You are a helpful AI tutor. Answer this in {language}: {user_text}"
+            chat = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            answer = chat.choices[0].message.content.strip()
+
+            # Generate TTS response using pyttsx3 and encode as base64
+            engine = pyttsx3.init()
+            voices = engine.getProperty('voices')
+            engine.setProperty('voice', voices[1].id if language == 'sw' else voices[0].id)
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+                engine.save_to_file(answer, f.name)
+                engine.runAndWait()
+                f.seek(0)
+                audio_base64 = base64.b64encode(f.read()).decode()
+
+            return Response({
+                "text_response": answer,
+                "audio_response": audio_base64
+            })
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
 
 class GenerateQuizQuestions(APIView):
     def post(self, request, *args, **kwargs):
