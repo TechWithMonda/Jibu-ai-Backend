@@ -41,7 +41,9 @@ tqdm==4.65.0
 numpy==1.26.2
 pandas==2.2.2
 scipy==1.14.1
+pydub
 
+ffmpeg-python
 # Document processing
 PyPDF2==3.0.1
 pytesseract==0.3.13
