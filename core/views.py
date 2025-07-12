@@ -21,7 +21,6 @@ from django.contrib.auth import get_user_model
 from pdf2image import convert_from_bytes
 import pytesseract
 import io
-from .plagiarism import PlagiarismDetector  # Add this import
 
 
 # Initialize OpenAI client once
