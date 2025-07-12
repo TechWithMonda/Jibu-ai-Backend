@@ -94,3 +94,9 @@ class Message(models.Model):
     content = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
     knowledge_level = models.CharField(max_length=20, default='intermediate')
+
+
+
+class UploadedDocument(models.Model):
+    file = models.FileField(upload_to='documents/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)

@@ -5,7 +5,7 @@ import os
 
 client = OpenAI()
 
-def check_plagiarism_with_embedding(uploaded_text, existing_texts):
+def check_plagiarism_with_embeddings(uploaded_text, existing_texts):
     """
     Compares uploaded_text to existing_texts using OpenAI embeddings.
     Returns a list of possible matches with similarity scores.

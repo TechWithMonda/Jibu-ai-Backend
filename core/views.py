@@ -11,7 +11,6 @@ from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action
 from rest_framework_simplejwt.views import TokenObtainPairView
-from openai import OpenAI
 import openai
 from openai import OpenAIError
 import mimetypes
@@ -24,8 +23,8 @@ import pytesseract
 import io
 
 
-client = openai.OpenAI()
-
+# Initialize OpenAI client once
+openai.api_key = settings.OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +260,7 @@ class AITutorAPIView(APIView):
     
     def generate_response(self, message, knowledge_level, action=None):
         try:
-            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
             
             # Create different prompts based on action and knowledge level
             if action == 'related':
@@ -395,7 +394,7 @@ Questions:
         try:
             config = self.MODEL_CONFIG[model_type]
             prompt = config['prompt_template'].format(text=text)
-            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
             response = client.chat.completions.create(
                 model=config['model'],
                 messages=[
@@ -480,16 +479,14 @@ class UploadAndCheckPlagiarism(APIView):
                 )
 
             # Check plagiarism
-            detector = PlagiarismDetector()
-            report = detector.detect_plagiarism(document)
-            
-            return Response({
-                "status": "success",
-                "document_id": document.id,
-                "report_id": report.id,
-                "similarity_score": report.score,
-                "message": "Plagiarism check completed"
-            })
+                
+            result = check_plagiarism_with_embeddings(document.content)
+            report = PlagiarismReport.objects.create(
+            document=document,
+            score=result['score'],
+            details=result.get('details', {}),
+            status='completed'
+        )
 
         except Exception as e:
             logger.error(f"Upload failed: {str(e)}", exc_info=True)
