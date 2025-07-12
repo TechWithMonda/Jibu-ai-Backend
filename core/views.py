@@ -150,17 +150,23 @@ class VoiceQueryView(APIView):
                 engine.setProperty('volume', 0.9)  # Slightly lower volume
                 
                 # Generate audio file
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-                    temp_path = f.name
-                    engine.save_to_file(answer, temp_path)
+        
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as wav_file:
+                    wav_path = wav_file.name
+
+                    engine.save_to_file(answer, wav_path)
                     engine.runAndWait()
-                    
-                    # Read and encode the audio
-                    with open(temp_path, 'rb') as audio_file:
-                        audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
-                    
-                    # Clean up
-                    cleanup_temp_files(temp_path)
+
+                    # Convert WAV to MP3
+                    mp3_buffer = BytesIO()
+                    sound = AudioSegment.from_wav(wav_path)
+                    sound.export(mp3_buffer, format="mp3")
+                    mp3_buffer.seek(0)
+
+                    audio_base64 = base64.b64encode(mp3_buffer.read()).decode('utf-8')
+
+                    # Clean up temp files
+                    cleanup_temp_files(wav_path)
                     
             except Exception as e:
                 return Response({'error': f'Audio generation failed: {str(e)}'}, 
