@@ -55,6 +55,13 @@ import base64
 
 from .utils import validate_audio_file, cleanup_temp_files
 
+from pydub.utils import which
+
+ffmpeg_path = which("ffmpeg")
+ffprobe_path = which("ffprobe")
+
+AudioSegment.converter = ffmpeg_path
+AudioSegment.ffprobe   = ffprobe_path
 class VoiceQueryView(APIView):
     def post(self, request, *args, **kwargs):
         try:

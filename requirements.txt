@@ -42,6 +42,7 @@ numpy==1.26.2
 pandas==2.2.2
 scipy==1.14.1
 pydub
+ffmpeg-static
 
 ffmpeg-python
 # Document processing
