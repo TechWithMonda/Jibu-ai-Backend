@@ -73,8 +73,12 @@ class VoiceQueryView(APIView):
 
             # Transcribe audio using Whisper
             try:
+                (...)
+                client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+
+
                 openai.api_key = settings.OPENAI_API_KEY
-                transcript = openai.Audio.transcribe(
+                transcript = client.audio.transcriptions.create(
                     "whisper-1", 
                     audio_file,
                     language=language  # Helps with accuracy
