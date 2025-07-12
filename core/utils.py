@@ -1,7 +1,6 @@
 import openai
 from django.conf import settings
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 import re
 import PyPDF2
 from io import BytesIO
