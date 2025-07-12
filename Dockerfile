@@ -25,6 +25,7 @@ RUN apt-get update && \
     libtesseract-dev \
     tesseract-ocr-eng \
     poppler-utils \
+    ffmpeg \
     # Other utilities
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
