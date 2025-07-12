@@ -24,7 +24,7 @@ def validate_audio_file(file: UploadedFile) -> str:
         return "File too large (max 5MB)"
     
     # Check file type
-    allowed_types = ['audio/mpeg', 'audio/wav', 'audio/ogg']
+    allowed_types = ['audio/mpeg', 'audio/wav', 'audio/ogg','audio/webm', 'video/webm']
     file_type = magic.from_buffer(file.read(1024), mime=True)
     file.seek(0)
     
