@@ -21,7 +21,10 @@ ALLOWED_HOSTS = [
     '.railway.app',  # Allow all Railway subdomains
     '.vercel.app',   # Allow all Vercel subdomains
     '.ngrok-free.app',
-       "capacitor://localhost",  # Allow ngrok URLs
+       "capacitor://localhost",
+       "www",
+        'jibuai.app',
+    'www.jibuai.app', # Allow ngrok URLs
 ]
 
 
@@ -34,6 +37,8 @@ CSRF_TRUSTED_ORIGINS = [
     'https://*.railway.app',
     'https://*.vercel.app',
     'https://*.ngrok-free.app',
+     "https://jibuai.app",
+    "https://www.jibuai.app",
 ]
 
 # Application definition
@@ -152,6 +157,8 @@ CORS_ALLOWED_ORIGINS = [
     "capacitor://localhost",
     "ionic://localhost",
     "https://localhost",
+    "https://jibuai.app",         # Your frontend
+    "https://www.jibuai.app",
 ]
 
 # Allow wildcard subdomains using regex
