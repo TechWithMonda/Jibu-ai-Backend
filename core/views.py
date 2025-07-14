@@ -52,10 +52,37 @@ from io import BytesIO
 from rest_framework.permissions import AllowAny
 from rest_framework.parsers import JSONParser
 import base64
-
+from django.utils.timezone import now, timedelta
 from .utils import validate_audio_file, cleanup_temp_files
+from django.db.models import Count
 
 from pydub.utils import which
+
+from django.db.models.functions import TruncDate
+@api_view(['GET'])
+# @permission_classes([IsAdminUser])  # 👈 Only admin users can access
+def user_signup_analytics(request):
+    today = now().date()
+    last_7_days = today - timedelta(days=6)
+
+    total_users = User.objects.count()
+    today_signups = User.objects.filter(date_joined__date=today).count()
+    last_7_days_signups = User.objects.filter(date_joined__date__gte=last_7_days).count()
+
+    daily_signups = (
+        User.objects.filter(date_joined__date__gte=last_7_days)
+        .annotate(day=TruncDate('date_joined'))
+        .values('day')
+        .annotate(count=Count('id'))
+        .order_by('day')
+    )
+
+    return Response({
+        "total_users": total_users,
+        "today_signups": today_signups,
+        "last_7_days_signups": last_7_days_signups,
+        "daily_signups": daily_signups,
+    })
 
 ffmpeg_path = which("ffmpeg")
 ffprobe_path = which("ffprobe")
