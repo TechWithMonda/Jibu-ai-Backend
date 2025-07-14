@@ -14,7 +14,7 @@ from .views import (
     PlagiarismReportViewSet,
     GenerateQuizQuestions,
     VoiceQueryView,
-    PublicUserSignupAnalytics
+
 )
 
 router = DefaultRouter()
@@ -32,6 +32,5 @@ urlpatterns = [
     path('plagiarism-check/', UploadAndCheckPlagiarism.as_view(), name="check"),
     path('generate-quiz/', GenerateQuizQuestions.as_view(), name='generate_quiz'), 
     path("voice-query/", VoiceQueryView.as_view(), name="voice-query"),
-     path('public-signup-analytics/', PublicUserSignupAnalytics.as_view()),
     path('', include(router.urls)),
 ]
