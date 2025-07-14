@@ -61,29 +61,32 @@ from pydub.utils import which
 from django.db.models.functions import TruncDate
 @api_view(['GET'])
 # @permission_classes([IsAdminUser])  # 👈 Only admin users can access
-def user_signup_analytics(request):
-    today = now().date()
-    last_7_days = today - timedelta(days=6)
+class PublicUserSignupAnalytics(APIView):
+    authentication_classes = []  # ⛔ No auth required
+    permission_classes = []      # ⛔ Anyone can access
 
-    total_users = User.objects.count()
-    today_signups = User.objects.filter(date_joined__date=today).count()
-    last_7_days_signups = User.objects.filter(date_joined__date__gte=last_7_days).count()
+    def get(self, request):
+        today = now().date()
+        last_7_days = today - timedelta(days=6)
 
-    daily_signups = (
-        User.objects.filter(date_joined__date__gte=last_7_days)
-        .annotate(day=TruncDate('date_joined'))
-        .values('day')
-        .annotate(count=Count('id'))
-        .order_by('day')
-    )
+        total_users = User.objects.count()
+        today_signups = User.objects.filter(date_joined__date=today).count()
+        last_7_days_signups = User.objects.filter(date_joined__date__gte=last_7_days).count()
 
-    return Response({
-        "total_users": total_users,
-        "today_signups": today_signups,
-        "last_7_days_signups": last_7_days_signups,
-        "daily_signups": daily_signups,
-    })
+        daily_signups = (
+            User.objects.filter(date_joined__date__gte=last_7_days)
+            .annotate(day=TruncDate('date_joined'))
+            .values('day')
+            .annotate(count=Count('id'))
+            .order_by('day')
+        )
 
+        return Response({
+            "total_users": total_users,
+            "today_signups": today_signups,
+            "last_7_days_signups": last_7_days_signups,
+            "daily_signups": daily_signups,
+        })
 ffmpeg_path = which("ffmpeg")
 ffprobe_path = which("ffprobe")
 
