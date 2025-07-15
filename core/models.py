@@ -112,3 +112,22 @@ class PremiumUser(models.Model):
 
     def __str__(self):
         return self.email
+    
+
+class Payment(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    reference = models.CharField(max_length=100, unique=True)
+    amount = models.IntegerField()
+    status = models.CharField(max_length=20)
+    paid_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.status} - {self.reference}"
+    
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    is_paid = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.user.username} - {'PAID' if self.is_paid else 'FREE'}"

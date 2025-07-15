@@ -55,13 +55,15 @@ import base64
 from django.utils.timezone import now, timedelta
 from .utils import validate_audio_file, cleanup_temp_files
 from django.db.models import Count
-
+from .models import Payment, UserProfile
 from pydub.utils import which
-
+from django.views.decorators.csrf import csrf_exempt
 from django.db.models.functions import TruncDate
-
+import json
+import hashlib
+import hmac
 from .models import PremiumUser  # Create this model to track who paid
-
+from django.http import JsonResponse
 @api_view(['POST'])
 def verify_payment(request):
     reference = request.data.get('reference')
@@ -91,7 +93,55 @@ def verify_payment(request):
             return Response({"error": "Payment not successful"}, status=400)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+   
 
+
+
+@csrf_exempt
+def paystack_webhook(request):
+    PAYSTACK_SECRET = settings.PAYSTACK_SECRET_KEY
+    payload = request.body
+    signature = request.headers.get('x-paystack-signature')
+
+    expected_signature = hmac.new(
+        PAYSTACK_SECRET.encode(), payload, hashlib.sha512
+    ).hexdigest()
+
+    if signature != expected_signature:
+        return JsonResponse({"status": "forbidden"}, status=403)
+
+    data = json.loads(payload)
+
+    if data['event'] == 'charge.success':
+        payment_data = data['data']
+        email = payment_data['customer']['email']
+        reference = payment_data['reference']
+        amount = payment_data['amount']
+
+        try:
+            user = User.objects.get(email=email)
+            profile = user.userprofile
+
+            # Save payment record
+            Payment.objects.get_or_create(
+                user=user,
+                reference=reference,
+                defaults={
+                    'amount': amount,
+                    'status': 'success',
+                    'paid_at': now()
+                }
+            )
+
+            # Mark user as paid
+            profile.is_paid = True
+            profile.save()
+
+        except User.DoesNotExist:
+            # Optional: log it or email admin
+            pass
+
+    return JsonResponse({"status": "success"}, status=200)
 ffmpeg_path = which("ffmpeg")
 ffprobe_path = which("ffprobe")
 

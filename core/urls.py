@@ -15,7 +15,7 @@ from .views import (
     PlagiarismReportViewSet,
     GenerateQuizQuestions,
     VoiceQueryView,
-
+paystack_webhook,
 )
 
 
@@ -38,4 +38,5 @@ urlpatterns = [
     path('initiate-payment/', views.initiate_payment, name='initiate_payment'),
     path('verify-payment/', views.verify_payment_view, name='verify_payment'),
     path('', include(router.urls)),
+     path('webhook/paystack/', paystack_webhook),
 ]
