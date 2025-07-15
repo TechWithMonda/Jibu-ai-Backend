@@ -141,6 +141,43 @@ def paystack_webhook(request):
         payload = request.body
         signature = request.headers.get('x-paystack-signature')
         
+        # Verify signature (your existing code here)
+
+        data = json.loads(payload)
+        if data.get('event') == 'charge.success':
+            payment_data = data['data']
+            email = payment_data['customer']['email']
+            reference = payment_data['reference']
+
+            # Get or create user first
+            user, _ = User.objects.get_or_create(
+                email=email,
+                defaults={'username': email}
+            )
+
+            # Then create/update PremiumUser
+            premium_user, created = PremiumUser.objects.update_or_create(
+                user=user,  # Use the user object directly
+                defaults={
+                    'email': email,
+                    'plan': 'Premium',
+                    'reference': reference,
+                    'activated_at': timezone.now()
+                }
+            )
+
+            return JsonResponse({"status": "success"})
+
+    except Exception as e:
+        logger.error(f"Webhook processing error: {str(e)}")
+        return JsonResponse({"status": "error"}, status=500)
+    if request.method != 'POST':
+        return JsonResponse({"status": "method not allowed"}, status=405)
+
+    try:
+        payload = request.body
+        signature = request.headers.get('x-paystack-signature')
+        
         if not signature:
             logger.warning("Missing Paystack signature in webhook")
             return JsonResponse({"status": "forbidden"}, status=403)

@@ -105,6 +105,7 @@ class UploadedDocument(models.Model):
 
 
 class PremiumUser(models.Model):
+    user = models.OneToOneField('auth.User', on_delete=models.CASCADE) 
     email = models.EmailField(unique=True)
     plan = models.CharField(max_length=50)
     reference = models.CharField(max_length=100)
