@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import MyTokenObtainPairView
-
+from . import views
 # Local imports
 from .views import (
     UploadPaperView,
@@ -35,6 +35,7 @@ urlpatterns = [
     path('plagiarism-check/', UploadAndCheckPlagiarism.as_view(), name="check"),
     path('generate-quiz/', GenerateQuizQuestions.as_view(), name='generate_quiz'), 
     path("voice-query/", VoiceQueryView.as_view(), name="voice-query"),
-    
+    path('initiate-payment/', views.initiate_payment, name='initiate_payment'),
+    path('verify-payment/', views.verify_payment_view, name='verify_payment'),
     path('', include(router.urls)),
 ]

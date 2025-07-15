@@ -49,7 +49,7 @@ from docx import Document as DocxDocument
 from .plagiarism import check_plagiarism_with_embeddings
 import json
 from io import BytesIO
-
+import requests
 from rest_framework.parsers import JSONParser
 import base64
 from django.utils.timezone import now, timedelta
@@ -60,6 +60,37 @@ from pydub.utils import which
 
 from django.db.models.functions import TruncDate
 
+from .models import PremiumUser  # Create this model to track who paid
+
+@api_view(['POST'])
+def verify_payment(request):
+    reference = request.data.get('reference')
+    email = request.data.get('email')
+
+    if not reference:
+        return Response({"error": "No reference provided"}, status=400)
+
+    # Call Paystack to verify
+    headers = {
+        "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"
+    }
+    url = f"https://api.paystack.co/transaction/verify/{reference}"
+
+    try:
+        paystack_res = requests.get(url, headers=headers)
+        result = paystack_res.json()
+
+        if result['data']['status'] == 'success':
+            # Save to DB: mark user as premium
+            PremiumUser.objects.update_or_create(
+                email=email,
+                defaults={"plan": "Premium", "reference": reference}
+            )
+            return Response({"message": "Payment verified!"})
+        else:
+            return Response({"error": "Payment not successful"}, status=400)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
 
 ffmpeg_path = which("ffmpeg")
 ffprobe_path = which("ffprobe")

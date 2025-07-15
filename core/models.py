@@ -100,3 +100,15 @@ class Message(models.Model):
 class UploadedDocument(models.Model):
     file = models.FileField(upload_to='documents/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
+
+
+
+
+class PremiumUser(models.Model):
+    email = models.EmailField(unique=True)
+    plan = models.CharField(max_length=50)
+    reference = models.CharField(max_length=100)
+    activated_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.email
