@@ -25,6 +25,8 @@ class VueStaticViewSitemap(Sitemap):
             'tutor',
             'timer',
             'uploadpaper',
+            'Privacypolicy',
+            'Termsofservice',
         ]
 
     def location(self, item):
