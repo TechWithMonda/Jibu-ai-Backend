@@ -65,43 +65,77 @@ import hmac
 from .models import PremiumUser  # Create this model to track who paid
 from django.http import JsonResponse
 
+
 @api_view(['POST'])
 def verify_payment(request):
     reference = request.data.get('reference')
     email = request.data.get('email')
 
-    if not reference:
-        return Response({"error": "No reference provided"}, status=400)
+    # Validate reference format
+    if not reference or not reference.startswith(('TRS_', 'test_')):
+        return Response(
+            {"error": "Invalid transaction reference. Must start with TRS_ or test_"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
-    headers = {
-        "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"
-    }
+    # Verify Paystack key is configured
+    if not settings.PAYSTACK_SECRET_KEY:
+        logger.error("Paystack secret key not configured")
+        return Response(
+            {"error": "Payment gateway configuration error"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
     url = f"https://api.paystack.co/transaction/verify/{reference}"
 
     try:
-        paystack_res = requests.get(url, headers=headers)
-        paystack_res.raise_for_status()  # This raises 400/500 errors
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        # Handle specific error cases
+        if response.status_code == 400:
+            return Response(
+                {"error": "Invalid verification request", "details": response.json()},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if response.status_code == 404:
+            return Response(
+                {"error": "Transaction not found in Paystack system"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        response.raise_for_status()
+        result = response.json()
 
-        result = paystack_res.json()
-        print("Paystack response:", json.dumps(result, indent=2))  # Debugging
-
-        if result['data']['status'] == 'success':
+        if result.get('status') and result['data']['status'] == 'success':
+            # Process successful payment
             PremiumUser.objects.update_or_create(
                 email=email,
-                defaults={"plan": "Premium", "reference": reference}
+                defaults={
+                    "plan": "Premium",
+                    "reference": reference,
+                    "verified_at": now()
+                }
             )
-            return Response({"message": "Payment verified!"})
-        else:
-            return Response({"error": "Payment not successful"}, status=400)
+            return Response({"message": "Payment verified successfully"})
+            
+        return Response(
+            {"error": "Payment not successful", "status": result['data']['status']},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
-    except requests.exceptions.HTTPError as errh:
-        print("HTTP error:", errh)
-        return Response({"error": "Paystack error", "details": str(errh)}, status=400)
-
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Paystack connection error: {str(e)}")
+        return Response(
+            {"error": "Could not connect to payment service"},
+            status=status.HTTP_502_BAD_GATEWAY
+        )
     except Exception as e:
-        print("General error:", e)
-        return Response({"error": "Server error", "details": str(e)}, status=500)
-
+        logger.error(f"Payment verification error: {str(e)}")
+        return Response(
+            {"error": "Payment verification failed"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 @csrf_exempt
 def paystack_webhook(request):
     PAYSTACK_SECRET = settings.PAYSTACK_SECRET_KEY
