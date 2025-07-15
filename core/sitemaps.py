@@ -1,14 +1,12 @@
 from django.contrib.sitemaps import Sitemap
-from django.urls import reverse_lazy
 
 class VueStaticViewSitemap(Sitemap):
     changefreq = "weekly"
     priority = 0.8
 
     def items(self):
-        # These are all Vue frontend paths
         return [
-            '',  # '/'
+            '',  # home
             'about',
             'login',
             'signup',
@@ -30,4 +28,4 @@ class VueStaticViewSitemap(Sitemap):
         ]
 
     def location(self, item):
-        return f'/{item}' if item else '/'
+        return f"https://jibuai.app/{item}" if item else "https://jibuai.app/"
