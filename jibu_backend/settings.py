@@ -33,9 +33,9 @@ ALLOWED_HOSTS = [
 
 
 
-# PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY")
-# if not PAYSTACK_SECRET_KEY:
-#     raise ValueError("Missing PAYSTACK_SECRET_KEY in environment!")
+PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY")
+if not PAYSTACK_SECRET_KEY:
+            raise ValueError("Missing PAYSTACK_SECRET_KEY in environment!")
 
 
 # Paystack Configuration
