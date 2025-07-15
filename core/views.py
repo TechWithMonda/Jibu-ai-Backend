@@ -65,20 +65,24 @@ import hmac
 from .models import PremiumUser  # Create this model to track who paid
 from django.http import JsonResponse
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 @api_view(['POST'])
 def verify_payment(request):
+    logger.info("VERIFY REQUEST BODY: %s", request.data)
+
     reference = request.data.get('reference')
     email = request.data.get('email')
 
-    # Validate reference format
-    if not reference or not reference.startswith(('TRS_', 'test_')):
+    if not reference or not reference.startswith(('TRS_', 'test_', 'psk_test_')):
+        logger.warning(f"Invalid reference format: {reference}")
         return Response(
-            {"error": "Invalid transaction reference. Must start with TRS_ or test_"},
+            {"error": "Invalid transaction reference. Must start with TRS_, test_, or psk_test_"},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Verify Paystack key is configured
     if not settings.PAYSTACK_SECRET_KEY:
         logger.error("Paystack secret key not configured")
         return Response(
@@ -91,8 +95,8 @@ def verify_payment(request):
 
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        
-        # Handle specific error cases
+        logger.info("PAYSTACK RESPONSE: %s", response.json())
+
         if response.status_code == 400:
             return Response(
                 {"error": "Invalid verification request", "details": response.json()},
@@ -103,12 +107,14 @@ def verify_payment(request):
                 {"error": "Transaction not found in Paystack system"},
                 status=status.HTTP_404_NOT_FOUND
             )
-            
+
         response.raise_for_status()
         result = response.json()
 
         if result.get('status') and result['data']['status'] == 'success':
-            # Process successful payment
+            from .models import PremiumUser
+            from django.utils.timezone import now
+
             PremiumUser.objects.update_or_create(
                 email=email,
                 defaults={
@@ -118,7 +124,7 @@ def verify_payment(request):
                 }
             )
             return Response({"message": "Payment verified successfully"})
-            
+
         return Response(
             {"error": "Payment not successful", "status": result['data']['status']},
             status=status.HTTP_400_BAD_REQUEST
@@ -136,7 +142,8 @@ def verify_payment(request):
             {"error": "Payment verification failed"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-@csrf_exempt
+
+
 def paystack_webhook(request):
     PAYSTACK_SECRET = settings.PAYSTACK_SECRET_KEY
     payload = request.body
