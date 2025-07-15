@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import MyTokenObtainPairView
+from django.contrib.sitemaps.views import sitemap  
 # Local imports
 from .views import (
     UploadPaperView,
@@ -16,6 +17,11 @@ from .views import (
     VoiceQueryView,
 
 )
+from core.sitemaps import VueStaticViewSitemap
+
+sitemaps = {
+    'vue': VueStaticViewSitemap,
+}
 
 router = DefaultRouter()
 router.register(r'documents', DocumentViewSet, basename='documents')
@@ -32,5 +38,6 @@ urlpatterns = [
     path('plagiarism-check/', UploadAndCheckPlagiarism.as_view(), name="check"),
     path('generate-quiz/', GenerateQuizQuestions.as_view(), name='generate_quiz'), 
     path("voice-query/", VoiceQueryView.as_view(), name="voice-query"),
+    path('sitemap.xml', sitemap, {'sitemaps': sitemaps}, name='sitemap'),
     path('', include(router.urls)),
 ]
