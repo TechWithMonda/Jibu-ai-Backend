@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-
+from django.utils import timezone
 import uuid
 
 class Document(models.Model):
@@ -121,7 +121,7 @@ class Payment(models.Model):
     currency = models.CharField(max_length=3, default='NGN')  # Add this field
     status = models.CharField(max_length=20)
     paid_at = models.DateTimeField(null=True, blank=True)
-    gateway_response = models.JSONField(null=True, blank=True)  # Add this field
+    gateway_response = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

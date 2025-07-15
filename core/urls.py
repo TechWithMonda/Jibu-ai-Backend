@@ -10,9 +10,8 @@ from .views import (
     RegisterView,
     DashboardAPIView,
     AITutorAPIView,
-    UploadAndCheckPlagiarism,
     DocumentViewSet,
-    PlagiarismReportViewSet,
+   
     GenerateQuizQuestions,
     VoiceQueryView,
     paystack_webhook,
@@ -22,9 +21,7 @@ from .views import (
 
 
 
-router = DefaultRouter()
-router.register(r'documents', DocumentViewSet, basename='documents')
-router.register(r'reports', PlagiarismReportViewSet, basename='reports')
+
 
 urlpatterns = [
     path('login/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),  # ✅ Use your custom view
@@ -34,10 +31,8 @@ urlpatterns = [
     path('analyze/', AnalyzeExamView.as_view(), name='analyze_exam'),
     path('register/', RegisterView.as_view(), name='register'),
     path('tutor/', AITutorAPIView.as_view(), name='ai_tutor_api'),
-    path('plagiarism-check/', UploadAndCheckPlagiarism.as_view(), name="check"),
     path('generate-quiz/', GenerateQuizQuestions.as_view(), name='generate_quiz'), 
     path("voice-query/", VoiceQueryView.as_view(), name="voice-query"),
     path('verify-payment/', VerifyPaymentView.as_view(), name='verify_payment'),
-    path('', include(router.urls)),
      path('webhook/paystack/', paystack_webhook),
 ]

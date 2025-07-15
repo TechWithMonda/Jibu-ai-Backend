@@ -36,18 +36,18 @@ User = get_user_model()
 # Local imports
 from .models import (
     UploadedPaper, ExamAnalysis, ExamPaper, SolutionView,
-    UserActivity, Conversation, Message, Document, PlagiarismReport, UploadedDocument
+    UserActivity, Conversation, Message, Document, UploadedDocument
 )
 from .serializers import (
     UploadedPaperSerializer, RegisterSerializer, MyTokenObtainPairSerializer,
     ExamPaperSerializer, UserActivitySerializer, ConversationSerializer,
-    MessageSerializer, DocumentSerializer, PlagiarismReportSerializer,
+    MessageSerializer, DocumentSerializer, 
     TutorRequestSerializer, TutorResponseSerializer
 )
 from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
-from .plagiarism import check_plagiarism_with_embeddings
 import json
+from django.utils import timezone
 from io import BytesIO
 import requests
 from rest_framework.parsers import JSONParser
@@ -64,120 +64,74 @@ import hashlib
 import hmac
 from .models import PremiumUser  # Create this model to track who paid
 from django.http import JsonResponse
-
+from rest_framework.authentication import TokenAuthentication
 import logging
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
 
 class VerifyPaymentView(APIView):
-    authentication_classes = []
-    permission_classes = []
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        logger.info("Payment verification request", extra={
-            'data': request.data,
-            'ip': request.META.get('REMOTE_ADDR')
-        })
-
-        reference = request.data.get('reference')
-        email = request.data.get('email')
-
-        # Validate required fields
-        if not reference or not email:
-            return Response(
-                {"error": "Both reference and email are required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # More lenient reference validation
-        if not isinstance(reference, str) or len(reference) < 8:
-            return Response(
-                {"error": "Invalid reference format"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         try:
+            reference = request.data.get('reference')
+            email = request.data.get('email')
+            
+            if not reference or not email:
+                return Response({"error": "Missing fields"}, status=400)
+
+            # Get or create user
+            user, _ = User.objects.get_or_create(
+                email=email,
+                defaults={'username': email}
+            )
+
             # Verify with Paystack
-            headers = {
-                "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
-                "Content-Type": "application/json"
-            }
+            headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
             response = requests.get(
                 f"https://api.paystack.co/transaction/verify/{reference}",
                 headers=headers,
                 timeout=10
             )
             
-            if response.status_code == 404:
-                return Response(
-                    {"error": "Transaction not found"},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            response.raise_for_status()
-            result = response.json()
+            if not response.ok:
+                return Response({"error": "Paystack verification failed"}, status=400)
 
-            if result.get('status') is True and result['data']['status'] == 'success':
-                payment_data = result['data']
-                
-                # Get or create user
-                user, created = User.objects.get_or_create(
-                    email=email,
-                    defaults={'username': email}
-                )
-                
-                # Create payment record
-                Payment.objects.update_or_create(
-                    reference=reference,
-                    defaults={
-                        'user': user,
-                        'amount': payment_data['amount'] / 100,
-                        'currency': payment_data.get('currency', 'NGN'),
-                        'status': 'success',
-                        'paid_at': datetime.now(),
-                        'gateway_response': payment_data
-                    }
-                )
-                
-                # Update premium status
-                PremiumUser.objects.update_or_create(
-                    user=user,
-                    defaults={
-                        'plan': 'Premium',
-                        'reference': reference,
-                        'verified_at': datetime.now()
-                    }
-                )
-                
-                return Response({
-                    "status": "success",
-                    "data": {
-                        "reference": reference,
-                        "amount": payment_data['amount'],
-                        "currency": payment_data.get('currency')
-                    }
-                })
+            data = response.json()
+            if data['data']['status'] != 'success':
+                return Response({"error": "Payment not successful"}, status=400)
 
-            return Response(
-                {"error": "Payment not successful"},
-                status=status.HTTP_402_PAYMENT_REQUIRED
+            # Create records
+            Payment.objects.update_or_create(
+                reference=reference,
+                defaults={
+                    'user': user,
+                    'amount': data['data']['amount'] / 100,
+                    'currency': data['data'].get('currency', 'NGN'),
+                    'status': 'success',
+                    'paid_at': timezone.now(),
+                    'gateway_response': data['data']
+                }
             )
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Paystack API error: {str(e)}")
-            return Response(
-                {"error": "Payment service unavailable"},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            PremiumUser.objects.update_or_create(
+                user=user,
+                defaults={
+                    'email': email,
+                    'plan': 'Premium',
+                    'reference': reference,
+                    'activated_at': timezone.now()
+                }
             )
+
+            return Response({"status": "success"})
+
         except Exception as e:
-            logger.exception("Payment verification error")
-            return Response(
-                {"error": "Payment verification failed"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-@csrf_exempt
+            logger.exception("Payment verification failed")
+            return Response({"error": "Internal server error"}, status=500)
+
 @csrf_exempt
 def paystack_webhook(request):
     if request.method != 'POST':
@@ -211,55 +165,41 @@ def paystack_webhook(request):
             payment_data = data['data']
             email = payment_data['customer']['email']
             reference = payment_data['reference']
-            amount = payment_data['amount'] / 100  # Convert from kobo
-            currency = payment_data.get('currency', 'NGN')
+            amount = payment_data['amount'] / 100
 
-            try:
-                user = User.objects.get(email=email)
-                
-                # Create or update payment record
-                payment, created = Payment.objects.update_or_create(
-                    reference=reference,
-                    defaults={
-                        'user': user,
-                        'amount': amount,
-                        'currency': currency,
-                        'status': 'success',
-                        'paid_at': datetime.now(),
-                        'gateway_response': payment_data
-                    }
-                )
+            # Get or create user
+            user, _ = User.objects.get_or_create(
+                email=email,
+                defaults={'username': email}
+            )
 
-                # Update user premium status
-                PremiumUser.objects.update_or_create(
-                    user=user,
-                    defaults={
-                        'plan': 'Premium',
-                        'reference': reference,
-                        'verified_at': datetime.now()
-                    }
-                )
+            # Create payment record
+            Payment.objects.update_or_create(
+                reference=reference,
+                defaults={
+                    'user': user,
+                    'amount': amount,
+                    'currency': payment_data.get('currency', 'NGN'),
+                    'status': 'success',
+                    'paid_at': timezone.now(),  # Now timezone-aware
+                    'gateway_response': payment_data
+                }
+            )
 
-                logger.info(f"Webhook processed successfully for {email}")
+            # Update premium status
+            PremiumUser.objects.update_or_create(
+                user=user,  # Now using the correct field
+                defaults={
+                    'email': email,
+                    'plan': 'Premium',
+                    'reference': reference,
+                    'activated_at': timezone.now()
+                }
+            )
 
-            except User.DoesNotExist:
-                logger.error(f"User with email {email} does not exist")
-                # Create a placeholder user or handle as needed
-                return JsonResponse({"status": "user not found"}, status=404)
-                
-            except Exception as e:
-                logger.exception(f"Error processing payment for {email}")
-                return JsonResponse({"status": "processing error"}, status=500)
-
-        return JsonResponse({"status": "success"})
-
-    except json.JSONDecodeError:
-        logger.error("Invalid JSON payload in webhook")
-        return JsonResponse({"status": "bad request"}, status=400)
     except Exception as e:
-        logger.exception("Unexpected error in webhook handler")
+        logger.exception("Webhook processing error")
         return JsonResponse({"status": "error"}, status=500)
-  
 ffmpeg_path = which("ffmpeg")
 ffprobe_path = which("ffprobe")
 
@@ -466,50 +406,6 @@ def extract_text_from_file(file):
         logger.error(f"Error during text extraction: {str(e)}")
         raise ValueError("Could not extract text from document")
 
-@api_view(['POST'])
-def check_plagiarism(request, document_id):
-    try:
-        document = UploadedDocument.objects.get(id=document_id)
-        file_path = document.file.path
-        file_name = document.file.name
-
-        # Extract text based on file type
-        mime_type, _ = mimetypes.guess_type(file_path)
-        extension = os.path.splitext(file_name)[1].lower()
-        extracted_text = ""
-
-        if mime_type == 'application/pdf' or extension == '.pdf':
-            with open(file_path, 'rb') as f:
-                pdf = PdfReader(f)
-                extracted_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' or extension == '.docx':
-            doc = DocxDocument(file_path)
-            extracted_text = "\n".join(para.text for para in doc.paragraphs)
-        elif mime_type == 'text/plain' or extension == '.txt':
-            with open(file_path, 'r', encoding='utf-8') as f:
-                extracted_text = f.read()
-        else:
-            return Response({'error': f'Unsupported file type: {mime_type}'}, status=400)
-
-        if not extracted_text.strip():
-            return Response({'error': 'No readable text found'}, status=400)
-
-        # Get comparison texts and check plagiarism
-        existing_texts = list(UploadedDocument.objects.exclude(id=document_id)
-                          .values_list('content', flat=True))
-        result = check_plagiarism_with_embeddings(extracted_text, existing_texts)
-
-        return Response({
-            'status': 'success',
-            'result': result,
-            'document_id': document_id
-        })
-
-    except UploadedDocument.DoesNotExist:
-        return Response({'error': 'Document not found'}, status=404)
-    except Exception as e:
-        logger.error(f"Plagiarism check error: {str(e)}")
-        return Response({'error': str(e)}, status=500)
 class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
@@ -525,42 +421,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         serializer.save(uploaded_by=self.request.user)
 
     @action(detail=True, methods=['post'])
-    def check_plagiarism(self, request, pk=None):
-        """Check plagiarism for a specific document"""
-        document = self.get_object()
-        
-        # Verify the document belongs to the requesting user
-        if document.uploaded_by != request.user:
-            return Response(
-                {'error': 'You do not have permission to access this document'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        try:
-            existing_texts = list(Document.objects.exclude(id=document.id)
-                              .exclude(content__isnull=True)
-                              .exclude(content='')
-                              .values_list('content', flat=True))
-            
-            result = check_plagiarism_with_embeddings(
-                uploaded_text=document.content,
-                existing_texts=existing_texts
-            )
-            
-            highest_score = max([r['similarity'] for r in result]) if result else 0
-            
-            report = PlagiarismReport.objects.create(
-                document=document,
-                score=highest_score,
-                details={'matches': result},
-                status='completed'
-            )
-            
-            return Response(PlagiarismReportSerializer(report).data)
-        except Exception as e:
-            logger.error(f"Plagiarism check failed: {str(e)}")
-            return Response({'error': str(e)}, status=500)
-        
+
     @action(detail=False, methods=['get'])
     def search(self, request):
         query = request.query_params.get('q', '')
@@ -574,66 +435,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(documents, many=True)
         return Response(serializer.data)
 
-class PlagiarismReportViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = PlagiarismReport.objects.all()
-    serializer_class = PlagiarismReportSerializer
-    permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        if document_id := self.request.query_params.get('document_id'):
-            queryset = queryset.filter(document__id=document_id)
-        return queryset.order_by('-created_at')
-
-class UploadAndCheckPlagiarism(APIView):
-    permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def post(self, request):
-        try:
-            if not (uploaded_file := request.FILES.get('file')):
-                return Response({"error": "No file provided"}, status=400)
-
-            document = Document.objects.create(
-                title=request.data.get('title', uploaded_file.name),
-                file=uploaded_file,
-                uploaded_by=request.user
-            )
-
-            try:
-                content = extract_text_from_file(uploaded_file)
-                document.content = content
-                document.save()
-            except Exception as e:
-                return Response({"error": f"Text extraction failed: {str(e)}"}, status=422)
-
-            existing_texts = list(Document.objects.exclude(id=document.id)
-                              .exclude(content__isnull=True)
-                              .exclude(content='')
-                              .values_list('content', flat=True))
-            
-            result = check_plagiarism_with_embeddings(
-                uploaded_text=document.content,
-                existing_texts=existing_texts
-            )
-            
-            highest_score = max([r['similarity'] for r in result]) if result else 0
-            
-            report = PlagiarismReport.objects.create(
-                document=document,
-                score=highest_score,
-                details={'matches': result},
-                status='completed'
-            )
-
-            return Response({
-                'document': DocumentSerializer(document).data,
-                'report': PlagiarismReportSerializer(report).data
-            }, status=201)
-
-        except Exception as e:
-            logger.error(f"Upload failed: {str(e)}")
-            return Response({"error": str(e)}, status=500)
 
 class AITutorAPIView(APIView):
     permission_classes = [IsAuthenticated]
