@@ -72,144 +72,114 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 class VerifyPaymentView(APIView):
-    """
-    Verify Paystack payment and activate premium subscription
-    """
-    authentication_classes = []  # Disable authentication for this endpoint
-    permission_classes = []     # Disable permissions for this endpoint
+    authentication_classes = []
+    permission_classes = []
 
     def post(self, request):
-        logger.info("Payment verification request received", extra={
+        logger.info("Payment verification request", extra={
             'data': request.data,
-            'headers': dict(request.headers)
+            'ip': request.META.get('REMOTE_ADDR')
         })
 
         reference = request.data.get('reference')
         email = request.data.get('email')
 
-        # Validate input data
+        # Validate required fields
         if not reference or not email:
-            logger.warning("Missing required fields", extra={'reference': reference, 'email': email})
             return Response(
                 {"error": "Both reference and email are required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Validate reference format
-        valid_prefixes = ('TRS_', 'test_', 'psk_test_', 'TX_')
-        if not any(reference.startswith(prefix) for prefix in valid_prefixes):
-            logger.warning(f"Invalid reference format: {reference}")
+        # More lenient reference validation
+        if not isinstance(reference, str) or len(reference) < 8:
             return Response(
-                {"error": f"Invalid transaction reference. Must start with: {', '.join(valid_prefixes)}"},
+                {"error": "Invalid reference format"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        # Validate email format
-        if '@' not in email:
-            logger.warning(f"Invalid email format: {email}")
-            return Response(
-                {"error": "Invalid email format"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Check Paystack configuration
-        if not settings.PAYSTACK_SECRET_KEY:
-            logger.critical("Paystack secret key not configured")
-            return Response(
-                {"error": "Payment gateway configuration error"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-        # Verify with Paystack API
-        headers = {
-            "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
-            "Content-Type": "application/json"
-        }
-        url = f"https://api.paystack.co/transaction/verify/{reference}"
 
         try:
-            response = requests.get(url, headers=headers, timeout=15)
-            response_data = response.json()
-            logger.info("Paystack verification response", extra=response_data)
-
-            # Handle specific Paystack response codes
+            # Verify with Paystack
+            headers = {
+                "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
+                "Content-Type": "application/json"
+            }
+            response = requests.get(
+                f"https://api.paystack.co/transaction/verify/{reference}",
+                headers=headers,
+                timeout=10
+            )
+            
             if response.status_code == 404:
                 return Response(
-                    {"error": "Transaction not found in Paystack system"},
+                    {"error": "Transaction not found"},
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            if not response.ok:
-                return Response(
-                    {
-                        "error": "Payment verification failed",
-                        "paystack_error": response_data.get('message')
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            response.raise_for_status()
+            result = response.json()
 
-            # Check payment status
-            if response_data.get('status') is True and response_data['data']['status'] == 'success':
-                payment_data = response_data['data']
+            if result.get('status') is True and result['data']['status'] == 'success':
+                payment_data = result['data']
                 
-                # Create/update premium user
-                premium_user, created = PremiumUser.objects.update_or_create(
+                # Get or create user
+                user, created = User.objects.get_or_create(
                     email=email,
+                    defaults={'username': email}
+                )
+                
+                # Create payment record
+                Payment.objects.update_or_create(
+                    reference=reference,
                     defaults={
-                        "plan": "Premium",
-                        "reference": reference,
-                        "verified_at": datetime.now(),
-                        "amount": payment_data.get('amount') / 100,  # Convert from kobo
-                        "currency": payment_data.get('currency'),
-                        "paystack_data": payment_data  # Store full response for reference
+                        'user': user,
+                        'amount': payment_data['amount'] / 100,
+                        'currency': payment_data.get('currency', 'NGN'),
+                        'status': 'success',
+                        'paid_at': datetime.now(),
+                        'gateway_response': payment_data
                     }
                 )
                 
-               
+                # Update premium status
+                PremiumUser.objects.update_or_create(
+                    user=user,
+                    defaults={
+                        'plan': 'Premium',
+                        'reference': reference,
+                        'verified_at': datetime.now()
+                    }
+                )
                 
-                # logger.info(f"Premium access granted to {email}")
-                # return Response({
-                #     "message": "Payment verified successfully",
-                #     "data": {
-                #         "email": email,
-                #         "reference": reference,
-                #         "amount": payment_data.get('amount'),
-                #         "currency": payment_data.get('currency')
-                #     }
-                # })
+                return Response({
+                    "status": "success",
+                    "data": {
+                        "reference": reference,
+                        "amount": payment_data['amount'],
+                        "currency": payment_data.get('currency')
+                    }
+                })
 
             return Response(
-                {
-                    "error": "Payment not successful",
-                    "status": response_data['data']['status']
-                },
+                {"error": "Payment not successful"},
                 status=status.HTTP_402_PAYMENT_REQUIRED
             )
 
-        except requests.exceptions.Timeout:
-            logger.error("Paystack verification timeout")
-            return Response(
-                {"error": "Payment service timeout"},
-                status=status.HTTP_504_GATEWAY_TIMEOUT
-            )
         except requests.exceptions.RequestException as e:
-            logger.error(f"Paystack connection error: {str(e)}")
+            logger.error(f"Paystack API error: {str(e)}")
             return Response(
-                {"error": "Could not connect to payment service"},
-                status=status.HTTP_502_BAD_GATEWAY
+                {"error": "Payment service unavailable"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
         except Exception as e:
-            logger.exception("Unexpected error during payment verification")
+            logger.exception("Payment verification error")
             return Response(
                 {"error": "Payment verification failed"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
+@csrf_exempt
 @csrf_exempt
 def paystack_webhook(request):
-    """
-    Handle Paystack webhook notifications
-    """
     if request.method != 'POST':
         return JsonResponse({"status": "method not allowed"}, status=405)
 
@@ -237,27 +207,23 @@ def paystack_webhook(request):
         
         logger.info(f"Paystack webhook received: {event}", extra=data)
 
-        # Handle different webhook events
         if event == 'charge.success':
             payment_data = data['data']
             email = payment_data['customer']['email']
             reference = payment_data['reference']
             amount = payment_data['amount'] / 100  # Convert from kobo
+            currency = payment_data.get('currency', 'NGN')
 
             try:
-                # Get or create user
-                user, created = User.objects.get_or_create(
-                    email=email,
-                    defaults={'username': email}
-                )
-
-                # Create payment record
+                user = User.objects.get(email=email)
+                
+                # Create or update payment record
                 payment, created = Payment.objects.update_or_create(
                     reference=reference,
                     defaults={
                         'user': user,
                         'amount': amount,
-                        'currency': payment_data.get('currency', 'NGN'),
+                        'currency': currency,
                         'status': 'success',
                         'paid_at': datetime.now(),
                         'gateway_response': payment_data
@@ -266,7 +232,7 @@ def paystack_webhook(request):
 
                 # Update user premium status
                 PremiumUser.objects.update_or_create(
-                    email=email,
+                    user=user,
                     defaults={
                         'plan': 'Premium',
                         'reference': reference,
@@ -276,13 +242,14 @@ def paystack_webhook(request):
 
                 logger.info(f"Webhook processed successfully for {email}")
 
+            except User.DoesNotExist:
+                logger.error(f"User with email {email} does not exist")
+                # Create a placeholder user or handle as needed
+                return JsonResponse({"status": "user not found"}, status=404)
+                
             except Exception as e:
-                logger.exception(f"Error processing webhook for {email}")
-                # Consider adding retry logic or admin notification here
-
-        elif event == 'subscription.create':
-            # Handle subscription events if needed
-            pass
+                logger.exception(f"Error processing payment for {email}")
+                return JsonResponse({"status": "processing error"}, status=500)
 
         return JsonResponse({"status": "success"})
 
@@ -292,49 +259,7 @@ def paystack_webhook(request):
     except Exception as e:
         logger.exception("Unexpected error in webhook handler")
         return JsonResponse({"status": "error"}, status=500)
-    PAYSTACK_SECRET = settings.PAYSTACK_SECRET_KEY
-    payload = request.body
-    signature = request.headers.get('x-paystack-signature')
-
-    expected_signature = hmac.new(
-        PAYSTACK_SECRET.encode(), payload, hashlib.sha512
-    ).hexdigest()
-
-    if signature != expected_signature:
-        return JsonResponse({"status": "forbidden"}, status=403)
-
-    data = json.loads(payload)
-
-    if data['event'] == 'charge.success':
-        payment_data = data['data']
-        email = payment_data['customer']['email']
-        reference = payment_data['reference']
-        amount = payment_data['amount']
-
-        try:
-            user = User.objects.get(email=email)
-            profile = user.userprofile
-
-            # Save payment record
-            Payment.objects.get_or_create(
-                user=user,
-                reference=reference,
-                defaults={
-                    'amount': amount,
-                    'status': 'success',
-                    'paid_at': now()
-                }
-            )
-
-            # Mark user as paid
-            profile.is_paid = True
-            profile.save()
-
-        except User.DoesNotExist:
-            # Optional: log it or email admin
-            pass
-
-    return JsonResponse({"status": "success"}, status=200)
+  
 ffmpeg_path = which("ffmpeg")
 ffprobe_path = which("ffprobe")
 
