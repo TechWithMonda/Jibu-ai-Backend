@@ -27,9 +27,9 @@ ALLOWED_HOSTS = [
     'www.jibuai.app', # Allow ngrok URLs
 ]
 
-PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
-PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY')
-
+PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY")
+if not PAYSTACK_SECRET_KEY:
+    raise ValueError("Missing PAYSTACK_SECRET_KEY in environment!")
 if not PAYSTACK_SECRET_KEY:
     raise ValueError("Missing PAYSTACK_SECRET_KEY in environment!")
 # Security headers
