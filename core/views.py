@@ -64,7 +64,7 @@ import hashlib
 import hmac
 from .models import PremiumUser  # Create this model to track who paid
 from django.http import JsonResponse
-@api_view(['POST'])
+
 @api_view(['POST'])
 def verify_payment(request):
     """
