@@ -65,37 +65,127 @@ import hmac
 from .models import PremiumUser  # Create this model to track who paid
 from django.http import JsonResponse
 @api_view(['POST'])
+@api_view(['POST'])
 def verify_payment(request):
+    """
+    Verify Paystack payment and upgrade user to premium
+    Handles both test and live transactions with proper validation
+    """
     reference = request.data.get('reference')
     email = request.data.get('email')
 
+    # Validate inputs
     if not reference:
-        return Response({"error": "No reference provided"}, status=400)
+        return Response({"error": "Payment reference is required"}, status=status.HTTP_400_BAD_REQUEST)
+    if not email:
+        return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Call Paystack to verify
-    headers = {
-        "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"
-    }
+    # Check if Paystack key is configured
+    if not settings.PAYSTACK_SECRET_KEY:
+        logger.error("Paystack secret key not configured")
+        return Response({"error": "Payment gateway configuration error"}, 
+                      status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
     url = f"https://api.paystack.co/transaction/verify/{reference}"
 
     try:
-        paystack_res = requests.get(url, headers=headers)
+        # Make API request with timeout
+        paystack_res = requests.get(url, headers=headers, timeout=10)
+        paystack_res.raise_for_status()  # Raises HTTPError for bad responses
         result = paystack_res.json()
 
-        if result['data']['status'] == 'success':
-            # Save to DB: mark user as premium
+        # Debug logging
+        logger.info(f"Paystack verification response: {result}")
+
+        # Validate response structure
+        if not result.get('status'):
+            logger.error(f"Invalid Paystack response structure: {result}")
+            return Response({"error": "Invalid payment verification response"}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+
+        # Handle test transaction
+        if reference == 'test_ref' and settings.DEBUG:
+            logger.info("Processing test transaction")
             PremiumUser.objects.update_or_create(
                 email=email,
-                defaults={"plan": "Premium", "reference": reference}
+                defaults={
+                    "plan": "Premium", 
+                    "reference": reference,
+                    "is_active": True,
+                    "verified_at": now()
+                }
             )
-            return Response({"message": "Payment verified!"})
-        else:
-            return Response({"error": "Payment not successful"}, status=400)
+            return Response({"message": "Test payment verified successfully"})
+
+        # Handle live transaction
+        if result['data']['status'] == 'success':
+            amount = result['data']['amount'] / 100  # Convert from kobo
+            
+            # Validate minimum amount if needed
+            if amount < 1000:  # Example: Minimum of ₦1000
+                return Response({"error": "Payment amount too small"}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+
+            # Create/update premium user
+            premium_user, created = PremiumUser.objects.update_or_create(
+                email=email,
+                defaults={
+                    "plan": "Premium",
+                    "reference": reference,
+                    "amount": amount,
+                    "is_active": True,
+                    "verified_at": now(),
+                    "payment_data": result['data']  # Store full payment data
+                }
+            )
+
+            # Update user profile if exists
+            try:
+                user = User.objects.get(email=email)
+                user.profile.is_premium = True
+                user.profile.premium_since = now()
+                user.profile.save()
+            except User.DoesNotExist:
+                pass
+
+            logger.info(f"Payment verified for {email}, reference: {reference}")
+            return Response({
+                "message": "Payment verified successfully",
+                "data": {
+                    "email": email,
+                    "plan": "Premium",
+                    "amount": amount,
+                    "currency": result['data']['currency']
+                }
+            })
+
+        # Handle failed transactions
+        return Response({
+            "error": "Payment not successful",
+            "status": result['data']['status'],
+            "gateway_response": result['data']['gateway_response']
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    except requests.exceptions.Timeout:
+        logger.error("Paystack API timeout")
+        return Response({"error": "Payment verification timeout"}, 
+                      status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Paystack connection error: {str(e)}")
+        return Response({"error": "Payment verification service unavailable"}, 
+                      status=status.HTTP_502_BAD_GATEWAY)
+    
+    except KeyError as e:
+        logger.error(f"Missing key in response: {str(e)}")
+        return Response({"error": "Invalid payment verification response"}, 
+                      status=status.HTTP_400_BAD_REQUEST)
+    
     except Exception as e:
-        return Response({"error": str(e)}, status=500)
-   
-
-
+        logger.error(f"Unexpected error in payment verification: {str(e)}", exc_info=True)
+        return Response({"error": "Internal server error"}, 
+                      status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @csrf_exempt
 def paystack_webhook(request):
