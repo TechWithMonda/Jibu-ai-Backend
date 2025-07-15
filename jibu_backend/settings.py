@@ -4,9 +4,13 @@ from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
 import pytesseract
-pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'  # Linux path
+pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract' 
+from django.core.exceptions import ImproperlyConfigured
+ # Linux path
 # Load environment variables
-load_dotenv()
+if os.environ.get("RAILWAY_ENVIRONMENT") is None:
+    from dotenv import load_dotenv
+    load_dotenv()
 
 # Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,11 +31,16 @@ ALLOWED_HOSTS = [
     'www.jibuai.app', # Allow ngrok URLs
 ]
 
+
+
 PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY")
 if not PAYSTACK_SECRET_KEY:
     raise ValueError("Missing PAYSTACK_SECRET_KEY in environment!")
-if not PAYSTACK_SECRET_KEY:
-    raise ValueError("Missing PAYSTACK_SECRET_KEY in environment!")
+
+
+# Paystack Configuration
+
+
 # Security headers
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = False
