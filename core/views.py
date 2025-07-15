@@ -90,7 +90,7 @@ def verify_payment(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-    headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
+    headers = {"Authorization": f"Bearer sk_live_a87229d4d99b7b7b8eaefe7b4e670c30cd231e06"}
     url = f"https://api.paystack.co/transaction/verify/{reference}"
 
     try:
