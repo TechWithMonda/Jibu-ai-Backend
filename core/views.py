@@ -69,80 +69,82 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-@api_view(['POST'])
-def verify_payment(request):
-    logger.info("VERIFY REQUEST BODY: %s", request.data)
+class VerifyPaymentView(APIView):
+    def post(self, request):
+        logger.info("VERIFY REQUEST BODY: %s", request.data)
 
-    reference = request.data.get('reference')
-    email = request.data.get('email')
+        reference = request.data.get('reference')
+        email = request.data.get('email')
 
-    if not reference or not reference.startswith(('TRS_', 'test_', 'psk_test_')):
-        logger.warning(f"Invalid reference format: {reference}")
-        return Response(
-            {"error": "Invalid transaction reference. Must start with TRS_, test_, or psk_test_"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    if not settings.PAYSTACK_SECRET_KEY:
-        logger.error("Paystack secret key not configured")
-        return Response(
-            {"error": "Payment gateway configuration error"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-    headers = {"Authorization": f"Bearer sk_live_a87229d4d99b7b7b8eaefe7b4e670c30cd231e06"}
-    url = f"https://api.paystack.co/transaction/verify/{reference}"
-
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        logger.info("PAYSTACK RESPONSE: %s", response.json())
-
-        if response.status_code == 400:
+        # Validate reference format
+        if not reference or not reference.startswith(('TRS_', 'test_', 'psk_test_')):
+            logger.warning(f"Invalid reference format: {reference}")
             return Response(
-                {"error": "Invalid verification request", "details": response.json()},
+                {"error": "Invalid transaction reference. Must start with TRS_, test_, or psk_test_"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        if response.status_code == 404:
+
+        # Check for secret key in settings
+        if not settings.PAYSTACK_SECRET_KEY:
+            logger.error("Paystack secret key not configured")
             return Response(
-                {"error": "Transaction not found in Paystack system"},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": "Payment gateway configuration error"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        response.raise_for_status()
-        result = response.json()
+        # Setup Paystack API call
+        headers = {
+            "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"
+        }
+        url = f"https://api.paystack.co/transaction/verify/{reference}"
 
-        if result.get('status') and result['data']['status'] == 'success':
-            from .models import PremiumUser
-            from django.utils.timezone import now
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            logger.info("PAYSTACK RESPONSE: %s", response.json())
 
-            PremiumUser.objects.update_or_create(
-                email=email,
-                defaults={
-                    "plan": "Premium",
-                    "reference": reference,
-                    "verified_at": now()
-                }
+            if response.status_code == 400:
+                return Response(
+                    {"error": "Invalid verification request", "details": response.json()},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if response.status_code == 404:
+                return Response(
+                    {"error": "Transaction not found in Paystack system"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            response.raise_for_status()
+            result = response.json()
+
+            # Check if payment was successful
+            if result.get('status') and result['data']['status'] == 'success':
+                PremiumUser.objects.update_or_create(
+                    email=email,
+                    defaults={
+                        "plan": "Premium",
+                        "reference": reference,
+                        "verified_at": now()
+                    }
+                )
+                return Response({"message": "Payment verified successfully"})
+
+            return Response(
+                {"error": "Payment not successful", "status": result['data']['status']},
+                status=status.HTTP_400_BAD_REQUEST
             )
-            return Response({"message": "Payment verified successfully"})
 
-        return Response(
-            {"error": "Payment not successful", "status": result['data']['status']},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Paystack connection error: {str(e)}")
-        return Response(
-            {"error": "Could not connect to payment service"},
-            status=status.HTTP_502_BAD_GATEWAY
-        )
-    except Exception as e:
-        logger.error(f"Payment verification error: {str(e)}")
-        return Response(
-            {"error": "Payment verification failed"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Paystack connection error: {str(e)}")
+            return Response(
+                {"error": "Could not connect to payment service"},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+        except Exception as e:
+            logger.error(f"Payment verification error: {str(e)}")
+            return Response(
+                {"error": "Payment verification failed"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 def paystack_webhook(request):
     PAYSTACK_SECRET = settings.PAYSTACK_SECRET_KEY
