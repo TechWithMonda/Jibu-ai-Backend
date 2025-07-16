@@ -68,13 +68,14 @@ from rest_framework.authentication import TokenAuthentication
 import logging
 from django.contrib.auth.hashers import make_password
 logger = logging.getLogger(__name__)
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
 BASE_URL = "https://api.paystack.co"
 
 class VerifyPaymentView(APIView):
-    authentication_classes = [TokenAuthentication]
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
