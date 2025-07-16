@@ -66,11 +66,98 @@ from .models import PremiumUser  # Create this model to track who paid
 from django.http import JsonResponse
 from rest_framework.authentication import TokenAuthentication
 import logging
-
+from django.contrib.auth.hashers import make_password
 logger = logging.getLogger(__name__)
 
 
+PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
+BASE_URL = "https://api.paystack.co"
+
 class VerifyPaymentView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            reference = request.data.get('reference')
+            email = request.data.get('email')
+            
+            if not reference or not email:
+                return Response({"error": "Missing reference or email"}, status=400)
+
+            # Get or create user with secure random password
+            user, created = User.objects.get_or_create(
+                email=email,
+                defaults={
+                    'username': email,
+                    'password': make_password(User.objects.make_random_password())
+                }
+            )
+
+            # Verify with Paystack
+            headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
+            response = requests.get(
+                f"{BASE_URL}/transaction/verify/{reference}",
+                headers=headers,
+                timeout=10
+            )
+            
+            data = response.json()
+            
+            if not response.ok:
+                error_detail = data.get('message', 'Paystack verification failed')
+                return Response({"error": error_detail}, status=400)
+
+            if data.get('status') is not True or data['data'].get('status') != 'success':
+                return Response({"error": "Payment not successful"}, status=400)
+
+            payment_data = data['data']
+            
+            # Create/update payment record
+            Payment.objects.update_or_create(
+                reference=reference,
+                defaults={
+                    'user': user,
+                    'amount': payment_data['amount'] / 100,
+                    'currency': payment_data.get('currency', 'NGN'),
+                    'status': 'success',
+                    'paid_at': timezone.now(),
+                    'gateway_response': payment_data
+                }
+            )
+
+            # Create/update premium user
+            PremiumUser.objects.update_or_create(
+                user=user,
+                defaults={
+                    'email': email,
+                    'plan': 'Premium',
+                    'reference': reference,
+                    'activated_at': timezone.now()
+                }
+            )
+
+            # Update user profile
+            UserProfile.objects.update_or_create(
+                user=user,
+                defaults={'is_paid': True}
+            )
+
+            return Response({
+                "status": "success",
+                "user_id": user.id,
+                "email": user.email
+            })
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Paystack API error: {str(e)}")
+            return Response({"error": "Payment verification service unavailable"}, status=503)
+            
+        except Exception as e:
+            logger.exception("Payment verification failed")
+            return Response({"error": "Internal server error"}, status=500)
+        
+
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
