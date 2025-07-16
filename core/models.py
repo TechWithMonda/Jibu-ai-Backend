@@ -131,11 +131,12 @@ class UploadedDocument(models.Model):
 # -------------------------------
 
 class PremiumUser(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    email = models.EmailField(unique=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    email = models.EmailField()
     plan = models.CharField(max_length=50)
     reference = models.CharField(max_length=100)
-    activated_at = models.DateTimeField(auto_now_add=True)
+    activated_at = models.DateTimeField()
+
 
     def __str__(self):
         return self.email
