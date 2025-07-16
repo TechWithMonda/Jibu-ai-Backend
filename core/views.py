@@ -161,103 +161,8 @@ class VerifyPaymentView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
-        try:
-            reference = request.data.get('reference')
-            email = request.data.get('email')
-            
-            if not reference or not email:
-                return Response({"error": "Missing fields"}, status=400)
-
-            # Get or create user
-            user, _ = User.objects.get_or_create(
-                email=email,
-                defaults={'username': email}
-            )
-
-            # Verify with Paystack
-            headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
-            response = requests.get(
-                f"https://api.paystack.co/transaction/verify/{reference}",
-                headers=headers,
-                timeout=10
-            )
-            
-            if not response.ok:
-                return Response({"error": "Paystack verification failed"}, status=400)
-
-            data = response.json()
-            if data['data']['status'] != 'success':
-                return Response({"error": "Payment not successful"}, status=400)
-
-            # Create records
-            Payment.objects.update_or_create(
-                reference=reference,
-                defaults={
-                    'user': user,
-                    'amount': data['data']['amount'] / 100,
-                    'currency': data['data'].get('currency', 'NGN'),
-                    'status': 'success',
-                    'paid_at': timezone.now(),
-                    'gateway_response': data['data']
-                }
-            )
-
-            PremiumUser.objects.update_or_create(
-                user=user,
-                defaults={
-                    'email': email,
-                    'plan': 'Premium',
-                    'reference': reference,
-                    'activated_at': timezone.now()
-                }
-            )
-
-            return Response({"status": "success"})
-
-        except Exception as e:
-            logger.exception("Payment verification failed")
-            return Response({"error": "Internal server error"}, status=500)
-
 @csrf_exempt
 def paystack_webhook(request):
-    if request.method != 'POST':
-        return JsonResponse({"status": "method not allowed"}, status=405)
-
-    try:
-        payload = request.body
-        signature = request.headers.get('x-paystack-signature')
-        
-        # Verify signature (your existing code here)
-
-        data = json.loads(payload)
-        if data.get('event') == 'charge.success':
-            payment_data = data['data']
-            email = payment_data['customer']['email']
-            reference = payment_data['reference']
-
-            # Get or create user first
-            user, _ = User.objects.get_or_create(
-                email=email,
-                defaults={'username': email}
-            )
-
-            # Then create/update PremiumUser
-            premium_user, created = PremiumUser.objects.update_or_create(
-                user=user,  # Use the user object directly
-                defaults={
-                    'email': email,
-                    'plan': 'Premium',
-                    'reference': reference,
-                    'activated_at': timezone.now()
-                }
-            )
-
-            return JsonResponse({"status": "success"})
-
-    except Exception as e:
-        logger.error(f"Webhook processing error: {str(e)}")
-        return JsonResponse({"status": "error"}, status=500)
     if request.method != 'POST':
         return JsonResponse({"status": "method not allowed"}, status=405)
 
@@ -283,7 +188,7 @@ def paystack_webhook(request):
         data = json.loads(payload)
         event = data.get('event')
         
-        logger.info(f"Paystack webhook received: {event}", extra=data)
+        logger.info(f"Paystack webhook received: {event}")
 
         if event == 'charge.success':
             payment_data = data['data']
@@ -305,25 +210,32 @@ def paystack_webhook(request):
                     'amount': amount,
                     'currency': payment_data.get('currency', 'NGN'),
                     'status': 'success',
-                    'paid_at': timezone.now(),  # Now timezone-aware
+                    'paid_at': timezone.now(),
                     'gateway_response': payment_data
                 }
             )
 
-            # Update premium status
-            PremiumUser.objects.update_or_create(
-                user=user,  # Now using the correct field
+            # Update premium status - using get_or_create to handle missing user_id
+            premium_user, created = PremiumUser.objects.get_or_create(
+                email=email,
                 defaults={
-                    'email': email,
+                    'user': user,
                     'plan': 'Premium',
                     'reference': reference,
                     'activated_at': timezone.now()
                 }
             )
+            
+            if not created:
+                premium_user.user = user
+                premium_user.save()
+
+            return JsonResponse({"status": "success"})
 
     except Exception as e:
         logger.exception("Webhook processing error")
         return JsonResponse({"status": "error"}, status=500)
+
 ffmpeg_path = which("ffmpeg")
 ffprobe_path = which("ffprobe")
 
