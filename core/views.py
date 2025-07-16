@@ -77,7 +77,7 @@ PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
 BASE_URL = "https://api.paystack.co"
 
 class VerifyPaymentView(APIView):
-    authentication_classes = [JWTAuthentication]  # Only JWT auth
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -85,14 +85,8 @@ class VerifyPaymentView(APIView):
             reference = request.data.get('reference')
             email = request.data.get('email')
             
-            if not reference:
-                return Response({"error": "Missing payment reference"}, status=status.HTTP_400_BAD_REQUEST)
-            if not email:
-                return Response({"error": "Missing email"}, status=status.HTTP_400_BAD_REQUEST)
-
-            # Validate email format
-            if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-                return Response({"error": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST)
+            if not reference or not email:
+                return Response({"error": "Missing reference or email"}, status=400)
 
             # Get or create user
             user, created = User.objects.get_or_create(
@@ -103,90 +97,61 @@ class VerifyPaymentView(APIView):
                 }
             )
 
-            # Verify with Paystack
-            headers = {
-                "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            try:
-                response = requests.get(
-                    f"{settings.PAYSTACK_BASE_URL}/transaction/verify/{reference}",
-                    headers=headers,
-                    timeout=15  # Increased timeout
-                )
-                response.raise_for_status()  # Raises exception for 4XX/5XX responses
-                data = response.json()
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Paystack API error: {str(e)}")
-                return Response(
-                    {"error": "Payment verification service unavailable"},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
+            # Call Paystack API
+            headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
+            response = requests.get(f"{BASE_URL}/transaction/verify/{reference}", headers=headers, timeout=10)
+            data = response.json()
 
-            # Check payment status
-            if not data.get('status', False) or data['data'].get('status') != 'success':
-                return Response(
-                    {"error": "Payment not successful", "gateway_response": data},
-                    status=status.HTTP_402_PAYMENT_REQUIRED
-                )
+            if not response.ok:
+                return Response({"error": data.get('message', 'Paystack verification failed')}, status=400)
+
+            if data.get('status') is not True or data['data'].get('status') != 'success':
+                return Response({"error": "Payment not successful"}, status=400)
 
             payment_data = data['data']
-            
-            # Atomic transaction for database operations
-            with transaction.atomic():
-                # Payment record
-                Payment.objects.update_or_create(
-                    reference=reference,
-                    defaults={
-                        'user': user,
-                        'amount': payment_data['amount'] / 100,
-                        'currency': payment_data.get('currency', 'NGN'),
-                        'status': 'success',
-                        'paid_at': timezone.now(),
-                        'gateway_response': payment_data
-                    }
-                )
 
-                # Premium user status
-                PremiumUser.objects.update_or_create(
-                    user=user,
-                    defaults={
-                        'email': email,
-                        'plan': 'Premium',
-                        'reference': reference,
-                        'activated_at': timezone.now(),
-                        'expires_at': timezone.now() + timedelta(days=30)  # 30-day subscription
-                    }
-                )
+            # Save Payment record
+            Payment.objects.update_or_create(
+                reference=reference,
+                defaults={
+                    'user': user,
+                    'amount': payment_data['amount'] / 100,
+                    'currency': payment_data.get('currency', 'NGN'),
+                    'status': 'success',
+                    'paid_at': timezone.now(),
+                    'gateway_response': payment_data
+                }
+            )
 
-                # Update profile
-                UserProfile.objects.update_or_create(
-                    user=user,
-                    defaults={
-                        'is_paid': True,
-                        'payment_verified_at': timezone.now()
-                    }
-                )
+            # Save PremiumUser
+            PremiumUser.objects.update_or_create(
+                user=user,
+                defaults={
+                    'email': email,
+                    'plan': 'Premium',
+                    'reference': reference,
+                    'activated_at': timezone.now()
+                }
+            )
+
+            # Update UserProfile
+            UserProfile.objects.update_or_create(
+                user=user,
+                defaults={'is_paid': True}
+            )
 
             return Response({
                 "status": "success",
                 "user_id": user.id,
-                "email": user.email,
-                "premium_until": (timezone.now() + timedelta(days=30)).isoformat()
+                "email": user.email
             })
 
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Paystack API error: {str(e)}")
+            return Response({"error": "Payment verification service unavailable"}, status=503)
         except Exception as e:
             logger.exception("Payment verification failed")
-            return Response(
-                {"error": "Internal server error"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        
-        # Temporarily add this to your view to log the IP
-import requests
-ip = requests.get('https://api.ipify.org').text
-logger.info(f"Server IP: {ip}")
+            return Response({"error": "Internal server error"}, status=500)
 @csrf_exempt
 def paystack_webhook(request):
     if request.method != 'POST':
