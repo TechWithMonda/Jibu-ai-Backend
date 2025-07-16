@@ -695,10 +695,12 @@ Questions:
 
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
+    permission_classes = [permissions.AllowAny] 
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
+    permission_classes = [permissions.AllowAny]
 
 class UploadPaperView(generics.CreateAPIView):
     serializer_class = UploadedPaperSerializer
