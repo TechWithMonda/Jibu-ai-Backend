@@ -182,6 +182,11 @@ class VerifyPaymentView(APIView):
                 {"error": "Internal server error"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+        # Temporarily add this to your view to log the IP
+import requests
+ip = requests.get('https://api.ipify.org').text
+logger.info(f"Server IP: {ip}")
 @csrf_exempt
 def paystack_webhook(request):
     if request.method != 'POST':
