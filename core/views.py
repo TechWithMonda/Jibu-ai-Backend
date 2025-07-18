@@ -425,7 +425,10 @@ Return only the questions in this format."""
         return questions
 
 # Initialize EasyOCR reader (only once globally)
-reader = easyocr.Reader(['en'], gpu=False)  # Railway Pro = CPU only
+
+reader = easyocr.Reader(['en'], gpu=False)
+
+logger = logging.getLogger(__name__)
 
 def extract_text_from_file(file):
     try:
@@ -435,11 +438,18 @@ def extract_text_from_file(file):
         if file.content_type == 'application/pdf':
             images = convert_from_bytes(file_content, dpi=300)
             text = ""
-            for img in images:
+            
+            # Limit pages for better performance
+            if len(images) > 5:
+                logger.warning(f"PDF has more than 5 pages, limiting processing.")
+                images = images[:5]
+
+            for idx, img in enumerate(images):
                 np_img = np.array(img)
                 result = reader.readtext(np_img)
                 page_text = "\n".join([res[1] for res in result])
-                text += page_text + "\n"
+                text += f"Page {idx+1}:\n{page_text}\n"
+            
             text = text.strip()
             if not text:
                 raise ValueError("No text extracted from PDF.")
@@ -447,11 +457,17 @@ def extract_text_from_file(file):
 
         # If it's an image
         img = Image.open(io.BytesIO(file_content))
+
+        # Optional: Resize the image for better OCR speed (if necessary)
+        img = img.resize((img.width // 2, img.height // 2))  # Example resizing to half
+
         np_img = np.array(img)
         result = reader.readtext(np_img)
         text = "\n".join([res[1] for res in result]).strip()
+        
         if not text:
             raise ValueError("No text extracted from image.")
+        
         return text
 
     except Exception as e:
