@@ -44,7 +44,9 @@ scipy==1.14.1
 pydub
 
 
-
+easyocr
+torch
+torchvision
 ffmpeg-python
 # Document processing
 PyPDF2==3.0.1

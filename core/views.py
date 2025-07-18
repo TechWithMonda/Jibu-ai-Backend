@@ -46,6 +46,8 @@ from .serializers import (
     MessageSerializer, DocumentSerializer, 
     TutorRequestSerializer, TutorResponseSerializer
 )
+import easyocr
+
 from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
 import json
@@ -421,17 +423,40 @@ Return only the questions in this format."""
         if current_q:
             questions.append(current_q)
         return questions
+
+# Initialize EasyOCR reader (only once globally)
+reader = easyocr.Reader(['en'], gpu=False)  # Railway Pro = CPU only
+
 def extract_text_from_file(file):
     try:
         file_content = file.read()
+
+        # If it's a PDF
         if file.content_type == 'application/pdf':
-            images = convert_from_bytes(file_content)
-            return "\n".join(pytesseract.image_to_string(img) for img in images).strip()
+            images = convert_from_bytes(file_content, dpi=300)
+            text = ""
+            for img in images:
+                np_img = np.array(img)
+                result = reader.readtext(np_img)
+                page_text = "\n".join([res[1] for res in result])
+                text += page_text + "\n"
+            text = text.strip()
+            if not text:
+                raise ValueError("No text extracted from PDF.")
+            return text
+
+        # If it's an image
         img = Image.open(io.BytesIO(file_content))
-        return pytesseract.image_to_string(img)
+        np_img = np.array(img)
+        result = reader.readtext(np_img)
+        text = "\n".join([res[1] for res in result]).strip()
+        if not text:
+            raise ValueError("No text extracted from image.")
+        return text
+
     except Exception as e:
-        logger.error(f"Error during text extraction: {str(e)}")
-        raise ValueError("Could not extract text from document")
+        logger.error(f"EasyOCR text extraction error: {str(e)}")
+        raise ValueError("Could not extract text from document.")
 
 class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
