@@ -1,5 +1,6 @@
 # views.py
 import logging
+from celery.result import AsyncResult
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from datetime import datetime
@@ -15,6 +16,7 @@ import openai
 from openai import OpenAIError
 import mimetypes
 import os
+from time import sleep
 import tempfile
 import pyttsx3
 from io import BytesIO
@@ -66,6 +68,7 @@ from django.db.models.functions import TruncDate
 import json
 import hashlib
 import hmac
+from core.tasks import analyze_exam_task 
 from .models import PremiumUser  # Create this model to track who paid
 from django.http import JsonResponse
 from rest_framework.authentication import TokenAuthentication
@@ -665,39 +668,29 @@ Questions:
     }
 
     def post(self, request):
-        try:
-            file = request.FILES.get('file')
-            if not file:
-                return Response({"error": "No file provided"}, status=400)
-            self.validate_file(file)
+            try:
+                file = request.FILES.get('fil        e')
+                if not file:
+                    return Response({"error": "No file provided"}, status=400)
+                self.validate_file(file)
 
-            start_time = datetime.now()
-            text = extract_text_from_file(file)
-            extraction_time = (datetime.now() - start_time).total_seconds()
+                file_bytes = file.read()
+                content_type = file.content_type
+                model_type = request.data.get('model_type', 'standard').lower()
 
-            if not text.strip():
-                return Response({"error": "Could not extract text from document"}, status=400)
+                # Queue background task
+                task = analyze_exam_task.delay(file_bytes, content_type, model_type)
 
-            model_type = request.data.get('model_type', 'standard').lower()
-            if model_type not in self.MODEL_CONFIG:
-                model_type = 'standard'
+                # Respond immediately
+                return Response({"task_id": task.id})
 
-            start_time = datetime.now()
-            response = self.call_openai(text, model_type)
-            processing_time = (datetime.now() - start_time).total_seconds()
-
-            return Response({
-                "result": response,
-                "metadata": {
-                    "model_used": model_type,
-                    "extraction_time": extraction_time,
-                    "processing_time": processing_time,
-                    "total_time": extraction_time + processing_time
-                }
-            })
-        except Exception as e:
-            logger.error(f"Error processing exam analysis: {str(e)}", exc_info=True)
-            return Response({"error": "An error occurred during processing"}, status=500)
+            except Exception as e:
+                return Response({"error": str(e)}, status=500)
+    def validate_file(self, file):
+        if file.content_type not in self.ALLOWED_MIME_TYPES:
+            raise ValueError(f"Unsupported file type. Allowed types: {', '.join(self.ALLOWED_MIME_TYPES)}")
+        if file.size > self.MAX_FILE_SIZE:
+            raise ValueError("File size exceeds maximum limit")
 
     def validate_file(self, file):
         if file.content_type not in self.ALLOWED_MIME_TYPES:
@@ -724,6 +717,16 @@ Questions:
         except OpenAIError as e:
             logger.error(f"OpenAI API error: {str(e)}")
             raise ValueError("Error communicating with AI service")
+
+class TaskStatusView(APIView):
+    def get(self, request, task_id):
+        result = AsyncResult(task_id)
+        if result.ready():
+            if result.successful():
+                return Response(result.result)
+            else:
+                return Response({"error": "Task failed"}, status=500)
+        return Response({"status": "processing"})
 
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer

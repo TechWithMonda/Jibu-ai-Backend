@@ -18,6 +18,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Security settings
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'unsafe-secret-key-for-dev-only')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
+CELERY_BROKER_URL = os.environ.get("REDIS_URL")
+CELERY_BROKER_USE_SSL = True
 
 ALLOWED_HOSTS = [
     '127.0.0.1',
