@@ -1,6 +1,8 @@
 # analyze/tasks.py
 from celery import shared_task
 import io
+from celery.exceptions import SoftTimeLimitExceeded
+
 import numpy as np
 from PIL import Image
 from pdf2image import convert_from_bytes
@@ -31,8 +33,8 @@ def extract_text_from_file_bytes(file_bytes, content_type):
         result = reader.readtext(np_img)
         return "\n".join([res[1] for res in result]).strip()
 
-@shared_task
-def analyze_exam_task(file_bytes, content_type, model_type):
+@shared_task(bind=True)
+def analyze_exam_task(self, file_bytes, content_type, model_type):
     try:
         text = extract_text_from_file_bytes(file_bytes, content_type)
         if not text.strip():
@@ -63,11 +65,9 @@ Questions:
             }
         }
 
-        if model_type not in model_config:
-            model_type = 'standard'
-
-        config = model_config[model_type]
+        config = model_config.get(model_type, model_config['standard'])
         prompt = config['prompt_template'].format(text=text)
+
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         response = client.chat.completions.create(
             model=config['model'],
@@ -85,6 +85,9 @@ Questions:
             "model_used": model_type
         }
 
+    except SoftTimeLimitExceeded:
+        logger.warning("Task exceeded soft time limit.")
+        return {"error": "Timeout: Analysis took too long"}
     except OpenAIError as e:
         logger.error(f"OpenAI error: {str(e)}")
         return {"error": "AI service error"}

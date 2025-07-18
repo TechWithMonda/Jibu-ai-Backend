@@ -21,6 +21,8 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 CELERY_BROKER_URL = os.environ.get("REDIS_URL")
 CELERY_RESULT_BACKEND = os.environ.get("REDIS_URL")
 
+CELERY_TASK_TIME_LIMIT = 120  # Hard limit (seconds)
+CELERY_TASK_SOFT_TIME_LIMIT = 90  # Soft limit for graceful timeout handling
 
 ALLOWED_HOSTS = [
     '127.0.0.1',
