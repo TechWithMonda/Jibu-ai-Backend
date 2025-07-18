@@ -667,25 +667,31 @@ Questions:
         }
     }
 
+   
     def post(self, request):
-            try:
-                file = request.FILES.get('fil        e')
-                if not file:
-                    return Response({"error": "No file provided"}, status=400)
-                self.validate_file(file)
+        try:
+            file = request.FILES.get('file')  # ✅ Correct key
 
-                file_bytes = file.read()
-                content_type = file.content_type
-                model_type = request.data.get('model_type', 'standard').lower()
+            if not file:
+                return Response({"error": "No file provided"}, status=400)
 
-                # Queue background task
-                task = analyze_exam_task.delay(file_bytes, content_type, model_type)
+            # ✅ Fixed typo: use 'file', not 'uploaded_file'
+            print("Uploaded file:", file.name, file.content_type, file.size)
 
-                # Respond immediately
-                return Response({"task_id": task.id})
+            # Optional file validation if you have one
+            # self.validate_file(file)  # ❓ Only include if you defined this method
 
-            except Exception as e:
-                return Response({"error": str(e)}, status=500)
+            file_bytes = file.read()
+            content_type = file.content_type
+            model_type = request.data.get('model_type', 'standard').lower()
+
+            # ✅ Enqueue the Celery task
+            task = analyze_exam_task.delay(file_bytes, content_type, model_type)
+
+            return Response({"task_id": task.id}, status=202)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
     def validate_file(self, file):
         if file.content_type not in self.ALLOWED_MIME_TYPES:
             raise ValueError(f"Unsupported file type. Allowed types: {', '.join(self.ALLOWED_MIME_TYPES)}")
