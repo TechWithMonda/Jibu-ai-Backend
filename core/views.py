@@ -69,7 +69,7 @@ from django.db.models.functions import TruncDate
 import json
 import hashlib
 import hmac
-from core.tasks import analyze_text_with_openai_task
+from core.tasks import analyze_exam_task
 from .models import PremiumUser  # Create this model to track who paid
 from django.http import JsonResponse
 from rest_framework.authentication import TokenAuthentication
@@ -673,7 +673,7 @@ class AnalyzeExamView(APIView):
             model_type = request.data.get('model_type', 'standard').lower()
 
             # ✅ Enqueue the Celery task
-            task = analyze_text_with_openai_task.delay(file_bytes, content_type, model_type)
+            task = analyze_exam_task.delay(file_bytes, content_type, model_type)
 
             return Response({"task_id": task.id}, status=202)
 

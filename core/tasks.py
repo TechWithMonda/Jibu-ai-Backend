@@ -134,35 +134,77 @@ def ocr_extract_task(self, job_id, file_bytes, content_type):
         job.status = 'error'
         job.error = str(e)
         job.save()
-        
 @shared_task(bind=True, soft_time_limit=60, time_limit=90)
-def analyze_exam_task(self, job_id, extracted_text):
+def analyze_exam_task(self, job_id, extracted_text, level='standard'):
     from .models import ExamAnalysisJob
     from openai import OpenAI
-    from django.conf import settings
 
     try:
+        # Get the job from the database
         job = ExamAnalysisJob.objects.get(id=job_id)
         job.status = 'analyzing'
         job.save()
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        prompt = f"Provide detailed step-by-step answers:\n\n{extracted_text}"
+        # Ensure there's valid text to analyze
+        if not extracted_text.strip():
+            job.status = 'error'
+            job.error = "No text extracted from document."
+            job.save()
+            return {"error": "No text extracted from document."}
 
+        # Configuration for each analysis level
+        model_config = {
+            'basic': {
+                'prompt_template': "Provide concise answers to these exam questions:\n\n{text}",
+                'model': "gpt-3.5-turbo",
+                'max_tokens': 300
+            },
+            'standard': {
+                'prompt_template': "Provide detailed step-by-step solutions to these exam questions:\n\n{text}",
+                'model': "gpt-3.5-turbo",
+                'max_tokens': 800
+            },
+            'advanced': {
+                'prompt_template': """Provide comprehensive solutions with:
+1. Multiple solution methods where applicable
+2. Explanations of key concepts
+3. References to relevant formulas/theorems
+4. Practical applications
+
+Questions:
+{text}""",
+                'model': "gpt-3.5-turbo",
+                'max_tokens': 1500
+            }
+        }
+
+        # Fallback to 'standard' if an invalid level is passed
+        config = model_config.get(level, model_config['standard'])
+        prompt = config['prompt_template'].format(text=extracted_text)
+
+        # Initialize OpenAI client
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+        # Call OpenAI API
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=config['model'],
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=1000,
+            max_tokens=config['max_tokens'],
             temperature=0.3
         )
 
+        # Save result to the database
         job.result = response.choices[0].message.content
         job.status = 'done'
         job.save()
+
+        return {"status": "done", "job_id": job_id}
+
     except Exception as e:
         job.status = 'error'
         job.error = str(e)
         job.save()
+        return {"status": "error", "job_id": job_id, "error": str(e)}
