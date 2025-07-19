@@ -678,7 +678,7 @@ class AnalyzeExamView(APIView):
             model_type = request.data.get('model_type', 'standard').lower()
 
             # ✅ Enqueue the Celery task
-            task = analyze_exam_task.delay(file_bytes, content_type, model_type)
+            task = analyze_text_with_openai_task.delay(file_bytes, content_type, model_type)
 
             return Response({"task_id": task.id}, status=202)
 
