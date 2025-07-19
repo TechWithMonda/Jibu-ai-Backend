@@ -49,7 +49,8 @@ from .serializers import (
     TutorRequestSerializer, TutorResponseSerializer
 )
 import easyocr
-
+from core.tasks import extract_text_task, analyze_text_with_openai_task
+from celery import chain
 from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
 import json
@@ -639,34 +640,25 @@ class DashboardAPIView(APIView):
 
 class AnalyzeExamView(APIView):
     permission_classes = [IsAuthenticated]
-    ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
-    MAX_FILE_SIZE = 10 * 1024 * 1024
+    parser_classes = [MultiPartParser]
 
-    MODEL_CONFIG = {
-        'basic': {
-            'prompt_template': "Provide concise answers to these exam questions:\n\n{text}",
-            'model': "gpt-3.5-turbo",
-            'max_tokens': 300
-        },
-        'standard': {
-            'prompt_template': "Provide detailed step-by-step solutions to these exam questions:\n\n{text}",
-            'model': "gpt-3.5-turbo",
-            'max_tokens': 800
-        },
-        'advanced': {
-            'prompt_template': """Provide comprehensive solutions with:
-1. Multiple solution methods where applicable
-2. Explanations of key concepts
-3. References to relevant formulas/theorems
-4. Practical applications
+    def post(self, request):
+        uploaded_file = request.FILES.get('file')
+        model_type = request.data.get('model_type', 'standard')
 
-Questions:
-{text}""",
-            'model': "gpt-3.5-turbo",
-            'max_tokens': 1500
-        }
-    }
+        if not uploaded_file:
+            return JsonResponse({'error': 'No file provided'}, status=400)
 
+        file_bytes = uploaded_file.read()
+        content_type = uploaded_file.content_type
+
+        # Chain tasks: OCR → AI Analysis
+        task_chain = chain(
+            extract_text_task.s(file_bytes, content_type),
+            analyze_text_with_openai_task.s(model_type)
+        )
+        result = task_chain.apply_async()
+        return JsonResponse({"task_id": result.id}, status=202)
    
     def post(self, request):
         try:

@@ -13,31 +13,34 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 reader = Reader(['en'], gpu=False)
-
-def extract_text_from_file_bytes(file_bytes, content_type):
-    if content_type == 'application/pdf':
-        images = convert_from_bytes(file_bytes, dpi=300)
-        if len(images) > 5:
-            images = images[:5]
-        text = ""
-        for idx, img in enumerate(images):
+@shared_task(bind=True, soft_time_limit=60, time_limit=90)
+def extract_text_task(self, file_bytes, content_type):
+    try:
+        if content_type == 'application/pdf':
+            images = convert_from_bytes(file_bytes, dpi=200)
+            if len(images) > 5:
+                images = images[:5]
+            text = ""
+            for idx, img in enumerate(images):
+                np_img = np.array(img)
+                result = reader.readtext(np_img)
+                page_text = "\n".join([res[1] for res in result])
+                text += f"Page {idx+1}:\n{page_text}\n"
+            return text.strip()
+        else:
+            img = Image.open(io.BytesIO(file_bytes))
+            img = img.resize((img.width // 2, img.height // 2))
             np_img = np.array(img)
             result = reader.readtext(np_img)
-            page_text = "\n".join([res[1] for res in result])
-            text += f"Page {idx+1}:\n{page_text}\n"
-        return text.strip()
-    else:
-        img = Image.open(io.BytesIO(file_bytes))
-        img = img.resize((img.width // 2, img.height // 2))
-        np_img = np.array(img)
-        result = reader.readtext(np_img)
-        return "\n".join([res[1] for res in result]).strip()
+            return "\n".join([res[1] for res in result]).strip()
 
+    except Exception as e:
+        logger.error(f"OCR failed: {str(e)}")
+        raise self.retry(exc=e, countdown=5, max_retries=2)
 @shared_task(bind=True, soft_time_limit=180, time_limit=210)
-def analyze_exam_task(self, file_bytes, content_type, model_type):
+def analyze_text_with_openai_task(self, extracted_text, model_type):
     try:
-        text = extract_text_from_file_bytes(file_bytes, content_type)
-        if not text.strip():
+        if not extracted_text.strip():
             return {"error": "No text extracted from document."}
 
         model_config = {
@@ -65,8 +68,11 @@ Questions:
             }
         }
 
-        config = model_config.get(model_type, model_config['standard'])
-        prompt = config['prompt_template'].format(text=text)
+        if model_type not in model_config:
+            model_type = 'standard'
+
+        config = model_config[model_type]
+        prompt = config['prompt_template'].format(text=extracted_text)
 
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         response = client.chat.completions.create(
@@ -85,12 +91,6 @@ Questions:
             "model_used": model_type
         }
 
-    except SoftTimeLimitExceeded:
-        logger.warning("Task exceeded soft time limit.")
-        return {"error": "Timeout: Analysis took too long"}
-    except OpenAIError as e:
-        logger.error(f"OpenAI error: {str(e)}")
-        return {"error": "AI service error"}
     except Exception as e:
-        logger.error(f"Task error: {str(e)}")
-        return {"error": "Task failed"}
+        logger.error(f"OpenAI analysis failed: {str(e)}")
+        raise self.retry(exc=e, countdown=5, max_retries=2)
