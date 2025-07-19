@@ -33,7 +33,7 @@ def extract_text_from_file_bytes(file_bytes, content_type):
         result = reader.readtext(np_img)
         return "\n".join([res[1] for res in result]).strip()
 
-@shared_task(bind=True)
+@shared_task(bind=True, soft_time_limit=180, time_limit=210)
 def analyze_exam_task(self, file_bytes, content_type, model_type):
     try:
         text = extract_text_from_file_bytes(file_bytes, content_type)

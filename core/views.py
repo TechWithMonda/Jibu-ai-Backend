@@ -733,7 +733,17 @@ class TaskStatusView(APIView):
             else:
                 return Response({"error": "Task failed"}, status=500)
         return Response({"status": "processing"})
-
+class TaskStatusView(APIView):
+    def get(self, request, task_id):
+        result = AsyncResult(task_id)
+        if result.state == 'PENDING':
+            return Response({"status": "pending"}, status=status.HTTP_202_ACCEPTED)
+        elif result.state == 'SUCCESS':
+            return Response({"status": "completed", "result": result.result}, status=status.HTTP_200_OK)
+        elif result.state == 'FAILURE':
+            return Response({"status": "failed", "error": str(result.result)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            return Response({"status": result.state}, status=status.HTTP_202_ACCEPTED)
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
     permission_classes = [permissions.AllowAny] 
