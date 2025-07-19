@@ -67,7 +67,6 @@ from django.db.models.functions import TruncDate
 import json
 import hashlib
 import hmac
-from core.tasks import analyze_exam_task
 from .models import PremiumUser  # Create this model to track who paid
 from django.http import JsonResponse
 from rest_framework.authentication import TokenAuthentication
