@@ -43,7 +43,21 @@ class SimilarityMatch(models.Model):
 # -------------------------------
 # Exam Analysis and Papers
 # -------------------------------
+class ExamAnalysisJob(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('ocr', 'Running OCR'),
+        ('analyzing', 'Analyzing with OpenAI'),
+        ('done', 'Done'),
+        ('error', 'Error'),
+    ]
 
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    result = models.TextField(blank=True, null=True)
+    error = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 class UploadedPaper(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     file = models.FileField(upload_to='uploads/')

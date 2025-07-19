@@ -40,7 +40,7 @@ User = get_user_model()
 # Local imports
 from .models import (
     UploadedPaper, ExamAnalysis, ExamPaper, SolutionView,
-    UserActivity, Conversation, Message, Document, UploadedDocument
+    UserActivity, Conversation, Message, Document, UploadedDocument,ExamAnalysisJob
 )
 from .serializers import (
     UploadedPaperSerializer, RegisterSerializer, MyTokenObtainPairSerializer,
@@ -49,7 +49,7 @@ from .serializers import (
     TutorRequestSerializer, TutorResponseSerializer
 )
 import easyocr
-from core.tasks import extract_text_task, analyze_text_with_openai_task
+from core.tasks import extract_text_task, analyze_text_with_openai_task,ocr_extract_task
 from celery import chain
 from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
@@ -640,26 +640,21 @@ class DashboardAPIView(APIView):
 
 class AnalyzeExamView(APIView):
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser]
 
     def post(self, request):
-        uploaded_file = request.FILES.get('file')
-        model_type = request.data.get('model_type', 'standard')
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'error': 'No file provided'}, status=400)
 
-        if not uploaded_file:
-            return JsonResponse({'error': 'No file provided'}, status=400)
+        content_type = file.content_type
+        file_bytes = file.read()
 
-        file_bytes = uploaded_file.read()
-        content_type = uploaded_file.content_type
+        job = ExamAnalysisJob.objects.create(user=request.user, status='pending')
 
-        # Chain tasks: OCR → AI Analysis
-        task_chain = chain(
-            extract_text_task.s(file_bytes, content_type),  # returns extracted_text
-            analyze_text_with_openai_task.partial(model_type)  # fix model_type, receives extracted_text
-)
-        result = task_chain.apply_async()
-        return JsonResponse({"task_id": result.id}, status=202)
-   
+        ocr_extract_task.delay(job.id, file_bytes, content_type)
+
+        return Response({"job_id": job.id}, status=202)
+
     def post(self, request):
         try:
             file = request.FILES.get('file')  # ✅ Correct key

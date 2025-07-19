@@ -94,3 +94,75 @@ Questions:
     except Exception as e:
         logger.error(f"OpenAI analysis failed: {str(e)}")
         raise self.retry(exc=e, countdown=5, max_retries=2)
+
+
+
+
+        # tasks.py
+
+@shared_task(bind=True, soft_time_limit=60, time_limit=90)
+def ocr_extract_task(self, job_id, file_bytes, content_type):
+    from .models import ExamAnalysisJob
+    import pytesseract
+    import cv2
+    import numpy as np
+    from pdf2image import convert_from_bytes
+    from PIL import Image
+
+    try:
+        job = ExamAnalysisJob.objects.get(id=job_id)
+        job.status = 'ocr'
+        job.save()
+
+        # OCR processing
+        text = ''
+        if content_type == 'application/pdf':
+            images = convert_from_bytes(file_bytes, dpi=200)
+            if len(images) > 5:
+                images = images[:5]
+            for img in images:
+                gray = np.array(img.convert("L"))
+                text += pytesseract.image_to_string(gray)
+        else:
+            img = Image.open(io.BytesIO(file_bytes)).convert("L")
+            gray = np.array(img)
+            text = pytesseract.image_to_string(gray)
+
+        # Pass text to next stage
+        analyze_exam_task.delay(job_id, text)
+    except Exception as e:
+        job.status = 'error'
+        job.error = str(e)
+        job.save()
+        
+@shared_task(bind=True, soft_time_limit=60, time_limit=90)
+def analyze_exam_task(self, job_id, extracted_text):
+    from .models import ExamAnalysisJob
+    from openai import OpenAI
+    from django.conf import settings
+
+    try:
+        job = ExamAnalysisJob.objects.get(id=job_id)
+        job.status = 'analyzing'
+        job.save()
+
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        prompt = f"Provide detailed step-by-step answers:\n\n{extracted_text}"
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1000,
+            temperature=0.3
+        )
+
+        job.result = response.choices[0].message.content
+        job.status = 'done'
+        job.save()
+    except Exception as e:
+        job.status = 'error'
+        job.error = str(e)
+        job.save()
