@@ -654,9 +654,9 @@ class AnalyzeExamView(APIView):
 
         # Chain tasks: OCR → AI Analysis
         task_chain = chain(
-            extract_text_task.s(file_bytes, content_type),
-            analyze_text_with_openai_task.s(model_type)
-        )
+            extract_text_task.s(file_bytes, content_type),  # returns extracted_text
+            analyze_text_with_openai_task.partial(model_type)  # fix model_type, receives extracted_text
+)
         result = task_chain.apply_async()
         return JsonResponse({"task_id": result.id}, status=202)
    
