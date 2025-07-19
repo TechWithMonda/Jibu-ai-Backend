@@ -16,7 +16,7 @@ from .views import (
     VoiceQueryView,
     paystack_webhook,
     VerifyPaymentView,
-    TaskStatusView
+    
     
 )
 
@@ -36,5 +36,5 @@ urlpatterns = [
     path("voice-query/", VoiceQueryView.as_view(), name="voice-query"),
     path('verify-payment/', VerifyPaymentView.as_view(), name='verify_payment'),
      path('webhook/paystack/', paystack_webhook),
-     path('task-status/<str:task_id>/', TaskStatusView.as_view()),
+    
 ]

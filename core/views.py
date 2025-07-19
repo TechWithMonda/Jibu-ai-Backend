@@ -49,8 +49,6 @@ from .serializers import (
     TutorRequestSerializer, TutorResponseSerializer
 )
 import easyocr
-from core.tasks import extract_text_task, analyze_text_with_openai_task,ocr_extract_task
-from celery import chain
 from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
 import json
@@ -437,46 +435,14 @@ logger = logging.getLogger(__name__)
 def extract_text_from_file(file):
     try:
         file_content = file.read()
-
-        # If it's a PDF
         if file.content_type == 'application/pdf':
-            images = convert_from_bytes(file_content, dpi=300)
-            text = ""
-            
-            # Limit pages for better performance
-            if len(images) > 5:
-                logger.warning(f"PDF has more than 5 pages, limiting processing.")
-                images = images[:5]
-
-            for idx, img in enumerate(images):
-                np_img = np.array(img)
-                result = reader.readtext(np_img)
-                page_text = "\n".join([res[1] for res in result])
-                text += f"Page {idx+1}:\n{page_text}\n"
-            
-            text = text.strip()
-            if not text:
-                raise ValueError("No text extracted from PDF.")
-            return text
-
-        # If it's an image
+            images = convert_from_bytes(file_content)
+            return "\n".join(pytesseract.image_to_string(img) for img in images).strip()
         img = Image.open(io.BytesIO(file_content))
-
-        # Optional: Resize the image for better OCR speed (if necessary)
-        img = img.resize((img.width // 2, img.height // 2))  # Example resizing to half
-
-        np_img = np.array(img)
-        result = reader.readtext(np_img)
-        text = "\n".join([res[1] for res in result]).strip()
-        
-        if not text:
-            raise ValueError("No text extracted from image.")
-        
-        return text
-
+        return pytesseract.image_to_string(img)
     except Exception as e:
-        logger.error(f"EasyOCR text extraction error: {str(e)}")
-        raise ValueError("Could not extract text from document.")
+        logger.error(f"Error during text extraction: {str(e)}")
+        raise ValueError("Could not extract text from document")
 
 class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
@@ -640,50 +606,68 @@ class DashboardAPIView(APIView):
 
 class AnalyzeExamView(APIView):
     permission_classes = [IsAuthenticated]
+    ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
+    MAX_FILE_SIZE = 10 * 1024 * 1024
 
-    def post(self, request):
-        file = request.FILES.get('file')
-        if not file:
-            return Response({'error': 'No file provided'}, status=400)
+    MODEL_CONFIG = {
+        'basic': {
+            'prompt_template': "Provide concise answers to these exam questions:\n\n{text}",
+            'model': "gpt-3.5-turbo",
+            'max_tokens': 300
+        },
+        'standard': {
+            'prompt_template': "Provide detailed step-by-step solutions to these exam questions:\n\n{text}",
+            'model': "gpt-3.5-turbo",
+            'max_tokens': 800
+        },
+        'advanced': {
+            'prompt_template': """Provide comprehensive solutions with:
+1. Multiple solution methods where applicable
+2. Explanations of key concepts
+3. References to relevant formulas/theorems
+4. Practical applications
 
-        content_type = file.content_type
-        file_bytes = file.read()
-
-        job = ExamAnalysisJob.objects.create(user=request.user, status='pending')
-
-        ocr_extract_task.delay(job.id, file_bytes, content_type)
-
-        return Response({"job_id": job.id}, status=202)
+Questions:
+{text}""",
+            'model': "gpt-3.5-turbo",
+            'max_tokens': 1500
+        }
+    }
 
     def post(self, request):
         try:
-            file = request.FILES.get('file')  # ✅ Correct key
-
+            file = request.FILES.get('file')
             if not file:
                 return Response({"error": "No file provided"}, status=400)
+            self.validate_file(file)
 
-            # ✅ Fixed typo: use 'file', not 'uploaded_file'
-            print("Uploaded file:", file.name, file.content_type, file.size)
+            start_time = datetime.now()
+            text = extract_text_from_file(file)
+            extraction_time = (datetime.now() - start_time).total_seconds()
 
-            # Optional file validation if you have one
-            # self.validate_file(file)  # ❓ Only include if you defined this method
+            if not text.strip():
+                return Response({"error": "Could not extract text from document"}, status=400)
 
-            file_bytes = file.read()
-            content_type = file.content_type
             model_type = request.data.get('model_type', 'standard').lower()
+            if model_type not in self.MODEL_CONFIG:
+                model_type = 'standard'
 
-            # ✅ Enqueue the Celery task
-            task = analyze_exam_task.delay(file_bytes, content_type, model_type)
+            start_time = datetime.now()
+            response = self.call_openai(text, model_type)
+            processing_time = (datetime.now() - start_time).total_seconds()
 
-            return Response({"task_id": task.id}, status=202)
-
+            return Response({
+                "result": response,
+                "metadata": {
+                    "model_used": model_type,
+                    "extraction_time": extraction_time,
+                    "processing_time": processing_time,
+                    "total_time": extraction_time + processing_time
+                }
+            })
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
-    def validate_file(self, file):
-        if file.content_type not in self.ALLOWED_MIME_TYPES:
-            raise ValueError(f"Unsupported file type. Allowed types: {', '.join(self.ALLOWED_MIME_TYPES)}")
-        if file.size > self.MAX_FILE_SIZE:
-            raise ValueError("File size exceeds maximum limit")
+            logger.error(f"Error processing exam analysis: {str(e)}", exc_info=True)
+            return Response({"error": "An error occurred during processing"}, status=500)
 
     def validate_file(self, file):
         if file.content_type not in self.ALLOWED_MIME_TYPES:
@@ -710,27 +694,6 @@ class AnalyzeExamView(APIView):
         except OpenAIError as e:
             logger.error(f"OpenAI API error: {str(e)}")
             raise ValueError("Error communicating with AI service")
-
-class TaskStatusView(APIView):
-    def get(self, request, task_id):
-        result = AsyncResult(task_id)
-        if result.ready():
-            if result.successful():
-                return Response(result.result)
-            else:
-                return Response({"error": "Task failed"}, status=500)
-        return Response({"status": "processing"})
-class TaskStatusView(APIView):
-    def get(self, request, task_id):
-        result = AsyncResult(task_id)
-        if result.state == 'PENDING':
-            return Response({"status": "pending"}, status=status.HTTP_202_ACCEPTED)
-        elif result.state == 'SUCCESS':
-            return Response({"status": "completed", "result": result.result}, status=status.HTTP_200_OK)
-        elif result.state == 'FAILURE':
-            return Response({"status": "failed", "error": str(result.result)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        else:
-            return Response({"status": result.state}, status=status.HTTP_202_ACCEPTED)
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
     permission_classes = [permissions.AllowAny] 
